@@ -214,6 +214,36 @@ ELB는 클라이언트와의 보안 통신 및 인증서 관리를 지원합니�
   - 짧은 연결: 낮은 타임아웃 값
   - 긴 연결: 높은 타임아웃 값
 
+### 5.4. X-Forwarded-For 헤더
+
+X-Forwarded-For (XFF) 헤더는 HTTP 프록시나 로드 밸런서를 통해 서버에 접속하는 클라이언트의 원래 IP 주소를 식별하기 위한 표준 헤더입니다.
+
+#### 작동 방식
+- **기본 동작**: 
+  - 클라이언트가 로드 밸런서에 요청을 보내면 로드 밸런서는 X-Forwarded-For 헤더에 클라이언트의 IP 주소를 추가
+  - 이미 X-Forwarded-For 헤더가 있다면, 클라이언트 IP를 목록 끝에 추가
+
+#### 헤더 형식
+```
+X-Forwarded-For: client_ip, proxy1_ip, proxy2_ip
+```
+- 첫 번째 IP: 원래 클라이언트의 IP 주소
+- 이후 IP: 요청이 통과한 프록시들의 IP 주소
+
+#### 활용 사례
+- **보안 모니터링**: 
+  - 실제 클라이언트 IP 기반 접근 제어
+  - 의심스러운 활동 탐지
+- **로깅 및 분석**: 
+  - 클라이언트 위치 기반 트래픽 분석
+  - 사용자 행동 패턴 분석
+- **지리적 제한**: 특정 지역의 접근 제어
+
+#### 구현 시 고려사항
+- **로그 설정**: 웹 서버 로그에 X-Forwarded-For 헤더 값을 포함하도록 구성
+- **보안**: 신뢰할 수 있는 프록시의 헤더만 수락하도록 설정
+- **프라이버시**: 개인정보 보호 정책에 따른 IP 주소 처리 방침 수립
+
 ## 6. 실전 사용 사례
 
 ### 6.1. 웹 애플리케이션 (ALB 활용)
@@ -271,7 +301,38 @@ ELB는 클라이언트와의 보안 통신 및 인증서 관리를 지원합니�
 - **CloudWatch 지표 활용**: 핵심 지표 모니터링 및 경보 설정
   - RequestCount, TargetResponseTime, HTTPCode_ELB_5XX 등
 - **액세스 로그 활성화**: 트래픽 분석 및 문제 해결
+  - X-Forwarded-For 헤더 로깅 구성
+  - 로그 형식 사용자 정의
+  - S3 버킷에 로그 저장 및 분석
 - **Health Check 최적화**: 애플리케이션에 맞는 상태 확인 경로 및 간격 설정
+
+#### 7.3.1 X-Forwarded-For 헤더 로깅 구성
+
+##### Apache 웹 서버 로깅 구성
+```apache
+# Apache 로그 형식 정의
+LogFormat "%{X-Forwarded-For}i %h %l %u %t \"%r\" %>s %b" combined
+CustomLog "logs/access_log" combined
+```
+
+##### Nginx 웹 서버 로깅 구성
+```nginx
+# Nginx 로그 형식 정의
+log_format combined '$http_x_forwarded_for - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent"';
+access_log /var/log/nginx/access.log combined;
+```
+
+##### 로그 분석 도구 연동
+- **CloudWatch Logs Insights**: 로그 패턴 분석 및 쿼리
+- **Amazon OpenSearch Service**: 로그 데이터 시각화
+- **Amazon Athena**: S3에 저장된 로그 SQL 쿼리
+
+##### 보안 모니터링
+- 비정상적인 IP 접근 패턴 감지
+- 지역별 접근 통계 분석
+- DDoS 공격 징후 모니터링
 
 ### 7.4. 보안 강화
 
@@ -279,3 +340,34 @@ ELB는 클라이언트와의 보안 통신 및 인증서 관리를 지원합니�
 - **보안 그룹 최소 권한 원칙 적용**: 필요한 포트만 개방
 - **최신 보안 정책 사용**: 강력한 암호화 알고리즘 적용
 - **WAF 통합**: 애플리케이션 레이어 공격 방어 (ALB와 통합)
+
+#### 7.4.1 X-Forwarded-For 헤더 보안 고려사항
+
+##### 신뢰할 수 있는 프록시 설정
+- ELB/ALB의 IP 범위만 신뢰하도록 구성
+- 중간 프록시의 IP 주소 검증
+- 헤더 스푸핑 방지를 위한 검증 로직 구현
+
+##### 접근 제어 구현
+```python
+# Python 예시: X-Forwarded-For 헤더 검증
+def validate_client_ip(request):
+    x_forwarded_for = request.headers.get('X-Forwarded-For')
+    if x_forwarded_for:
+        # 첫 번째 IP가 실제 클라이언트 IP
+        client_ip = x_forwarded_for.split(',')[0].strip()
+        if is_blocked_ip(client_ip):
+            return False
+    return True
+```
+
+##### 보안 정책 권장사항
+- X-Forwarded-For 헤더 필터링 및 검증
+- 로드 밸런서 레벨에서의 IP 기반 차단
+- WAF 규칙과 연계한 보안 강화
+- 정기적인 보안 감사 수행
+
+##### 개인정보 보호
+- IP 주소 암호화 또는 마스킹
+- 로그 보관 기간 정책 수립
+- GDPR 등 개인정보 보호 규정 준수
