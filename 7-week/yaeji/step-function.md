@@ -24,15 +24,40 @@ Amazon States Language는 AWS Step Functions에서 상태 머신을 정의하기
 ### 1.1.2. 상태 유형 (State Types)
 
 1. **Task State**
+
+Task State는 Step Functions에서 가장 일반적으로 사용되는 상태 유형으로, 실제 작업을 수행하는 상태입니다.
+
+### Task State의 주요 특징
+
+1. **리소스 통합**
+   - AWS Lambda 함수 실행
+   - AWS 서비스 API 호출 (예: DynamoDB, SQS, SNS 등)
+   - Activity 작업 수행 (외부 작업자와의 통합)
+
+2. **입력/출력 처리**
+   - InputPath: 입력 데이터 필터링
+   - OutputPath: 출력 데이터 필터링
+   - ResultPath: 작업 결과를 원본 입력과 병합
+   - Parameters: 입력 데이터 변환 및 매핑
+
+3. **오류 처리**
+   - Retry: 실패 시 재시도 로직
+   - Catch: 특정 오류 발생 시 대체 상태로 전환
+   - TimeoutSeconds: 작업 시간 제한 설정
+
+### Task State 예시 코드
+
 ```json
 {
-  "ProcessPayment": {
+  "ProcessOrder": {
     "Type": "Task",
-    "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessPaymentFunction",
-    "Next": "ConfirmOrder",
+    "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessOrderFunction",
+    "InputPath": "$.orderDetails",
+    "ResultPath": "$.processedOrder",
+    "TimeoutSeconds": 300,
     "Retry": [
       {
-        "ErrorEquals": ["ServiceUnavailable"],
+        "ErrorEquals": ["ServiceException", "Lambda.ServiceException"],
         "IntervalSeconds": 2,
         "MaxAttempts": 3,
         "BackoffRate": 2.0
@@ -40,13 +65,87 @@ Amazon States Language는 AWS Step Functions에서 상태 머신을 정의하기
     ],
     "Catch": [
       {
-        "ErrorEquals": ["PaymentError"],
-        "Next": "HandleError"
+        "ErrorEquals": ["States.Timeout"],
+        "Next": "HandleTimeout"
       }
-    ]
+    ],
+    "Next": "ValidateOrder"
   }
 }
 ```
+
+### Task State를 사용한 장시간 실행 작업 분할 예시
+
+```json
+{
+  "StartAt": "ProcessDataChunk1",
+  "States": {
+    "ProcessDataChunk1": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessChunk1",
+      "Next": "ProcessDataChunk2",
+      "TimeoutSeconds": 900
+    },
+    "ProcessDataChunk2": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessChunk2",
+      "Next": "ProcessDataChunk3",
+      "TimeoutSeconds": 900
+    },
+    "ProcessDataChunk3": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessChunk3",
+      "Next": "ProcessDataChunk4",
+      "TimeoutSeconds": 900
+    },
+    "ProcessDataChunk4": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessChunk4",
+      "End": true,
+      "TimeoutSeconds": 900
+    }
+  }
+}
+```
+
+### Task State의 장점
+
+1. **실행 제어**
+   - 각 작업의 실행 시간을 개별적으로 관리
+   - 작업 간의 데이터 흐름을 명확하게 정의
+   - 실패한 작업만 재실행 가능
+
+2. **모니터링 및 디버깅**
+   - 각 작업의 상태와 진행 상황을 시각적으로 확인
+   - 상세한 실행 이력 제공
+   - CloudWatch와의 통합으로 모니터링 용이
+
+3. **확장성**
+   - 새로운 작업 추가가 용이
+   - 작업 간의 의존성 명확하게 관리
+   - 다양한 AWS 서비스와의 통합 지원
+
+4. **오류 복구**
+   - 세밀한 재시도 정책 설정 가능
+   - 오류 발생 시 대체 경로 정의 가능
+   - 장애 지점부터 재실행 가능
+
+### Task State 사용 시 모범 사례
+
+1. **작업 분할**
+   - 큰 작업을 관리 가능한 크기로 분할
+   - 각 작업의 실행 시간이 Lambda 제한 시간(15분) 이내가 되도록 설계
+   - 작업 간 의존성을 명확히 정의
+
+2. **오류 처리 전략**
+   - 일시적인 오류에 대한 재시도 로직 구현
+   - 영구적인 오류에 대한 대체 경로 정의
+   - 적절한 타임아웃 값 설정
+
+3. **데이터 흐름 최적화**
+   - 필요한 데이터만 다음 상태로 전달
+   - 큰 페이로드는 S3를 통해 전달
+   - ResultPath를 사용하여 원본 입력 데이터 보존
 
 2. **Choice State**
 ```json

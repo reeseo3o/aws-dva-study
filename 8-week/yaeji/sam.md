@@ -205,3 +205,70 @@ parameter_overrides = "Environment=prod LogLevel=INFO"
 *   **모범 사례 내장**: 정책 템플릿, CodeDeploy 통합 등을 통해 AWS 모범 사례를 쉽게 적용할 수 있습니다.
 *   **통합 개발 환경**: SAM CLI를 통해 빌드, 패키지, 배포, 로컬 테스트, 로그 확인 등 전체 개발 수명 주기를 지원합니다.
 *   **확장성**: CloudFormation의 모든 기능을 활용할 수 있어 복잡한 아키텍처도 구성 가능합니다.
+
+## 10. SAM 애플리케이션 배포 3단계
+
+### 1️⃣ 로컬 환경에서 SAM 템플릿을 빌드
+
+```bash
+sam build
+```
+
+*   **목적**: 코드와 의존성을 컴파일하고 정리하여 배포 가능한 형태로 준비
+*   **주요 기능**:
+    *   Lambda 함수 코드와 의존성을 패키징
+    *   `template.yaml`을 기준으로 `.aws-sam/build/template.yaml` 생성
+    *   Lambda 런타임에 맞는 방식으로 코드 준비
+*   **옵션**:
+    *   `--use-container`: Docker 컨테이너 내에서 빌드하여 호환성 문제 해결
+
+### 2️⃣ SAM 애플리케이션을 패키징
+
+```bash
+sam package --s3-bucket <your-bucket-name> --output-template-file packaged.yaml
+```
+
+*   **목적**: 빌드된 아티팩트를 Amazon S3에 업로드하고 배포 준비
+*   **주요 기능**:
+    *   빌드된 아티팩트를 지정된 S3 버킷에 업로드
+    *   `template.yaml`을 `packaged.yaml`로 변환 (S3 링크 포함)
+
+### 3️⃣ 패키지된 템플릿을 사용해 배포
+
+```bash
+sam deploy --template-file packaged.yaml --stack-name <stack-name> --capabilities CAPABILITY_IAM
+```
+
+*   **목적**: CloudFormation을 통해 스택 생성 및 리소스 배포
+*   **주요 기능**:
+    *   CloudFormation 스택 생성/업데이트
+    *   Lambda 함수, API Gateway 등의 리소스 배포
+
+### 배포 관련 추가 참고사항
+
+1.  **배포 제한사항**:
+    *   압축된 배포 패키지(.zip) 크기: 50MB
+    *   압축 해제된 크기: 250MB
+    *   더 큰 파일은 `/tmp` 공간 활용 고려
+
+2.  **배포 옵션**:
+    *   `--guided`: 대화형 모드로 배포 설정 안내
+    *   `--capabilities CAPABILITY_IAM`: IAM 리소스 생성 권한 부여
+    *   `--parameter-overrides`: 템플릿 파라미터 직접 지정
+
+3.  **모범 사례**:
+    *   배포 전 `sam validate`로 템플릿 유효성 검사
+    *   로컬 테스트를 위해 `sam local invoke` 활용
+    *   환경별 설정은 `samconfig.toml`로 관리
+
+### 올바른 배포 단계 조합
+
+✅ **정답**:
+1.  로컬 환경에서 SAM 템플릿을 빌드합니다 - SAM CLI 사용 기본 단계
+2.  배포를 위해 SAM 애플리케이션을 패키징합니다 - S3 업로드 필수 단계
+3.  Amazon S3 버킷에서 SAM 템플릿을 배포합니다 - CloudFormation 기반 배포
+
+❌ **오답**:
+1.  Amazon EC2 인스턴스에서 SAM 템플릿을 빌드합니다 - SAM은 로컬 환경에서도 잘 동작하므로 EC2가 필수가 아님
+2.  AWS CodePipeline에서 SAM 템플릿을 배포합니다 - CI/CD 자동화는 선택사항이며, 직접 배포와는 별개
+3.  AWS SDK로 CodeDeploy 사용하여 SAM 템플릿 빌드 - SAM은 CodeDeploy를 배포 대상으로는 사용할 수 있지만, 빌드에 SDK는 불필요

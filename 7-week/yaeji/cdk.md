@@ -69,3 +69,113 @@ CDK 코드는 일반 프로그래밍 코드처럼 테스트할 수 있습니다.
 -   **템플릿 로드 방법:**
     1.  `Template.fromStack(MyStack)`: CDK에서 정의한 스택으로부터 템플릿을 가져옵니다.
     2.  `Template.fromString(MyString)`: 문자열(파일 등)으로부터 외부 CloudFormation 템플릿을 가져와 테스트합니다.
+
+## 8. CDK와 SAM 통합 테스트 가이드
+
+CDK로 정의된 Lambda 함수를 로컬에서 테스트하기 위해 SAM CLI를 활용할 수 있습니다. 이를 통해 실제 AWS 환경에 배포하지 않고도 Lambda 함수의 동작을 검증할 수 있습니다.
+
+### 8.1 사전 준비사항
+
+1. AWS SAM CLI 설치
+   ```bash
+   pip install aws-sam-cli
+   ```
+
+2. Docker 설치 및 실행
+   - SAM CLI는 로컬 테스트를 위해 Docker를 사용합니다.
+   - Lambda 실행 환경을 에뮬레이션하기 위함입니다.
+
+### 8.2 테스트 단계
+
+1. CDK 코드를 CloudFormation 템플릿으로 변환
+   ```bash
+   cdk synth > template.yaml
+   ```
+
+2. Lambda 함수 로컬 테스트
+   ```bash
+   sam local invoke [Lambda 함수 논리 ID] -t template.yaml --event events/test-event.json
+   ```
+
+   - `[Lambda 함수 논리 ID]`: CloudFormation 템플릿에서 확인할 수 있는 Lambda 함수의 논리적 이름
+   - `-t template.yaml`: `cdk synth`로 생성된 CloudFormation 템플릿 파일
+   - `--event events/test-event.json`: 테스트에 사용할 이벤트 데이터 파일
+
+### 8.3 고급 테스트 기능
+
+1. 디버깅
+   ```bash
+   sam local invoke -d 5858 [Lambda 함수 논리 ID] -t template.yaml
+   ```
+   - `-d 5858`: 디버그 포트 지정
+
+2. 환경 변수 설정
+   ```bash
+   sam local invoke [Lambda 함수 논리 ID] -t template.yaml --env-vars env.json
+   ```
+
+3. API Gateway 통합 테스트
+   ```bash
+   sam local start-api -t template.yaml
+   ```
+
+### 8.4 모범 사례
+
+1. **이벤트 데이터 관리**
+   - `events/` 디렉토리에 테스트 이벤트 JSON 파일들을 구조화하여 저장
+   - 다양한 시나리오에 대한 테스트 이벤트 준비
+
+2. **로컬 테스트 자동화**
+   - 쉘 스크립트나 Makefile을 사용하여 테스트 과정 자동화
+   - CI/CD 파이프라인에 통합
+
+3. **환경 변수 관리**
+   - 로컬 테스트용 환경 변수는 별도의 파일로 관리
+   - 민감한 정보는 AWS Secrets Manager나 Parameter Store 사용
+
+4. **성능 최적화**
+   - 첫 실행 시 Docker 이미지 다운로드로 인한 지연 예상
+   - 자주 사용하는 런타임의 이미지는 미리 다운로드
+
+### 8.5 주의사항
+
+1. **AWS 서비스 통합**
+   - 로컬 테스트 시 실제 AWS 서비스와의 통합이 필요한 경우 적절한 IAM 권한 필요
+   - 모킹(Mocking)을 통한 테스트도 고려
+
+2. **리소스 제한**
+   - 로컬 환경의 메모리와 CPU 제한 고려
+   - Lambda 함수의 타임아웃 설정 확인
+
+3. **네트워크 요구사항**
+   - VPC 설정이 있는 Lambda 함수의 경우 추가 설정 필요
+   - 외부 서비스 의존성 고려
+
+## 9. AWS CDK의 추가적인 장점과 특징
+
+### 9.1. 프로그래밍 언어의 장점 활용
+- **타입 안전성**: TypeScript, Java 등의 정적 타입 언어를 사용하면 컴파일 시점에 오류를 발견할 수 있습니다.
+- **IDE 지원**: 코드 자동 완성, 실시간 오류 검사, 리팩토링 도구 등 IDE의 강력한 기능을 활용할 수 있습니다.
+- **재사용성**: 객체 지향 프로그래밍의 상속, 캡슐화 등을 활용하여 인프라 코드를 효율적으로 관리할 수 있습니다.
+- **단위 테스트**: 일반 애플리케이션 코드처럼 인프라 코드에 대한 단위 테스트를 작성할 수 있습니다.
+
+### 9.2. 고급 패턴 및 모범 사례
+- **Construct 라이브러리**: AWS에서 제공하는 검증된 고수준 컴포넌트를 활용하여 복잡한 아키텍처를 쉽게 구현할 수 있습니다.
+- **환경 분리**: 개발, 스테이징, 프로덕션 환경별로 다른 설정을 코드로 관리할 수 있습니다.
+- **Infrastructure as Code (IaC)**: 버전 관리, 코드 리뷰, CI/CD 파이프라인 등 소프트웨어 개발의 모범 사례를 인프라 관리에도 적용할 수 있습니다.
+
+### 9.3. AWS 서비스와의 통합
+- **CloudFormation 기반**: CDK는 내부적으로 CloudFormation을 사용하므로, AWS의 안정적인 프로비저닝 엔진의 장점을 그대로 활용할 수 있습니다.
+- **AWS 서비스 통합**: Lambda 함수, ECS 서비스, API Gateway 등 다양한 AWS 서비스를 코드로 쉽게 통합할 수 있습니다.
+- **자동 롤백**: 배포 실패 시 CloudFormation의 자동 롤백 기능을 통해 안전하게 이전 상태로 복원됩니다.
+
+### 9.4. 개발 생산성 향상
+- **빠른 프로토타이핑**: 고수준 구성 요소를 사용하여 복잡한 인프라를 빠르게 구축할 수 있습니다.
+- **코드 생성**: `cdk init` 명령을 통해 프로젝트 기본 구조와 필요한 설정 파일들을 자동으로 생성할 수 있습니다.
+- **실시간 피드백**: `cdk diff` 명령으로 변경 사항을 배포 전에 미리 확인할 수 있습니다.
+- **문서화**: 코드 자체가 문서화 역할을 하며, 주석과 README를 통해 인프라 구성을 명확하게 설명할 수 있습니다.
+
+### 9.5. 보안 및 규정 준수
+- **정책 검사**: CDK는 AWS IAM 정책, 보안 그룹 규칙 등을 코드로 정의할 때 잘못된 구성을 미리 감지할 수 있습니다.
+- **감사 용이성**: 인프라 변경 사항이 코드로 관리되므로 누가, 언제, 무엇을 변경했는지 추적이 용이합니다.
+- **규정 준수**: AWS Organizations의 Service Control Policy (SCP)와 통합하여 조직의 정책을 준수하도록 할 수 있습니다.

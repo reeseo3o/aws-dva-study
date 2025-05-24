@@ -16,6 +16,82 @@ STS는 다양한 API를 제공하며, 시험에 자주 출제되는 주요 API�
 
 **시험 주요 출제 API**: `AssumeRole`, `GetSessionToken`, `GetCallerIdentity`, `DecodeAuthorizationMessage`
 
+## DecodeAuthorizationMessage API
+
+AWS STS DecodeAuthorizationMessage API는 AWS 요청에 대한 응답으로 반환된 인코딩된 메시지에서 요청의 권한 부여 상태에 대한 추가 정보를 디코딩합니다.
+
+### 작동 원리
+
+1. **권한 부여 실패 시나리오**:
+   * 사용자가 요청한 작업을 수행할 권한이 없는 경우, 해당 요청은 `Client.UnauthorizedOperation` 응답(HTTP 403 응답)을 반환합니다.
+   * 일부 AWS 작업은 이러한 권한 부여 실패에 대한 세부 정보를 제공하는 인코딩된 메시지를 추가로 반환합니다.
+
+2. **메시지 인코딩의 이유**:
+   * 권한 부여 상태 세부 정보가 작업을 요청한 사용자에게 공개되어서는 안 되는 특권 정보로 구성될 수 있기 때문입니다.
+   * 보안상의 이유로 메시지가 인코딩되어 있습니다.
+
+3. **필요한 IAM 권한**:
+   * 권한 부여 상태 메시지를 디코딩하려면 IAM 정책을 통해 사용자에게 `DecodeAuthorizationMessage` (`sts:DecodeAuthorizationMessage`) 작업을 요청할 수 있는 권한이 부여되어야 합니다.
+
+### IAM 정책 예시
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowDecodeAuthorizationMessage",
+            "Effect": "Allow",
+            "Action": "sts:DecodeAuthorizationMessage",
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### AWS CLI 사용 예시
+
+```bash
+aws sts decode-authorization-message --encoded-message [인코딩된_메시지]
+```
+
+### 디코딩된 메시지 예시
+
+```json
+{
+    "DecodedMessage": {
+        "allowed": false,
+        "explicitDeny": false,
+        "matchedStatements": [],
+        "failures": [
+            "no-matching-statement"
+        ],
+        "context": {
+            "principal": {
+                "id": "AROAXXXXXXXXXXXXXXXXX",
+                "arn": "arn:aws:iam::123456789012:role/example-role"
+            },
+            "action": "s3:PutObject",
+            "resource": "arn:aws:s3:::example-bucket/*",
+            "conditions": {}
+        }
+    }
+}
+```
+
+### 주의사항
+
+* AWS KMS나 외부 라이브러리로는 디코딩할 수 없습니다.
+* IAM 서비스가 아닌 STS 서비스를 통해서만 디코딩이 가능합니다.
+* 보안상의 이유로 디코딩 권한은 신중하게 부여해야 합니다.
+
+### 활용 사례
+
+* 권한 문제 디버깅
+* IAM 정책 문제 해결
+* 보안 감사
+* 권한 설정 최적화
+
 ## `AssumeRole` 작동 원리
 
 1.  **IAM 역할 정의**: 대상 계정(동일 계정 또는 다른 계정)에 IAM 역할을 정의합니다.

@@ -13,10 +13,62 @@
     *   각 단계에서 생성되는 아티팩트는 S3 버킷에 저장되어 다음 단계로 전달됩니다.
     *   CloudWatch Events/EventBridge를 통해 파이프라인 상태 변화를 모니터링하고, 실패 시 CloudTrail로 API 호출을 감사합니다.
     *   실습 예제: GitHub에서 소스를 가져와 Elastic Beanstalk 환경에 배포하는 파이프라인 생성, 수동 승인 단계 추가, 변경 사항 커밋 시 자동 배포 확인.
+    *   수동 승인 작업:
+        - 파이프라인의 특정 단계에서 수동 승인 작업을 추가하여 실행을 일시 중지할 수 있습니다.
+        - 승인이 필요한 상황: 코드 검토, 변경 관리 검토, 수동 QA 테스트, 콘텐츠 검토 등
+        - SNS 주제와 통합하여 승인 요청 알림을 이메일로 전송할 수 있습니다.
+        - 승인 대기 시간은 최대 7일이며, 이 기간 내 승인되지 않으면 파이프라인이 실패합니다.
+        - SNS 주제 명명 규칙 예시: `tutorialsdojoManualApprovalPHL-us-east-2-approval`
+        - 승인 작업은 파이프라인과 동일한 AWS 리전의 SNS 주제를 사용해야 합니다.
+
+    *   API Gateway 인증/인가와 CodePipeline 수동 승인 비교:
+
+        | 구분 | API Gateway | CodePipeline 수동 승인 |
+        |------|-------------|----------------------|
+        | **목적** | - API 엔드포인트 외부 접근 제어<br>- 실시간 요청 인증/인가<br>- 다양한 클라이언트 접근 관리 | - CI/CD 파이프라인 워크플로우 제어<br>- 코드 배포 프로세스 품질 관리<br>- 내부 팀원 검토 프로세스 관리 |
+        | **인증 방식** | - IAM (SigV4 서명)<br>- Cognito (토큰 기반)<br>- Lambda Authorizers (커스텀 로직)<br>- 리소스 정책 (IP/VPC 기반) | - IAM 권한 기반 승인/거부<br>- SNS 통한 알림<br>- 단순 승인/거부 결정 |
+        | **시간 제한** | - 실시간 요청/응답<br>- Lambda Authorizer 결과 캐싱 가능 | - 최대 7일 승인 대기<br>- 시간 초과 시 자동 실패 |
+        | **통합 방식** | - 다양한 백엔드 서비스 통합<br>- 서드파티 인증 시스템 통합 | - SNS 통합만 지원<br>- 동일 리전 SNS 주제 필수 |
+        | **사용 사례** | - 외부 API 보안<br>- 마이크로서비스 아키텍처<br>- B2B/B2C API 제공 | - 코드 리뷰<br>- 변경 관리 검토<br>- QA 테스트 승인<br>- 콘텐츠 검토 |
 
 4.  **AWS CodeBuild**
     *   소스 코드를 컴파일하고, 테스트를 실행하며, 배포 가능한 소프트웨어 패키지를 생성하는 완전 관리형 빌드 서비스입니다.
     *   빌드 지침은 프로젝트 루트의 `buildspec.yml` 파일에 정의됩니다. (필수 암기 사항)
+    *   `buildspec.yml` 파일 구조 (시험 필수 암기):
+        ```yaml
+        version: 0.2
+        phases:
+          install:
+            runtime-versions:
+              nodejs: 18  # 런타임 버전 지정
+            commands:
+              - npm install  # 빌드 도구 설치
+          pre_build:
+            commands:
+              - echo "Running pre-build commands"
+              - npm test    # 테스트 실행
+          build:
+            commands:
+              - echo "Running build commands"
+              - npm run build  # 실제 빌드 수행
+          post_build:
+            commands:
+              - echo "Build completed"
+        artifacts:
+          files:
+            - '**/*'  # 빌드 결과물 지정
+          name: build-artifact
+        cache:
+          paths:
+            - 'node_modules/**/*'  # 캐시할 디렉토리
+        ```
+    *   phases (단계별 명령어 실행):
+        - install: 빌드 환경 설정 및 종속성 설치
+        - pre_build: 빌드 전 실행할 명령어 (예: 로그인, 테스트)
+        - build: 실제 빌드 명령어 실행
+        - post_build: 빌드 후 작업 (예: 결과물 압축, 알림)
+    *   artifacts: 빌드 결과물 지정 및 관리
+    *   cache: 후속 빌드를 위해 캐시할 파일/디렉토리 지정
     *   다양한 프로그래밍 언어(Java, Python, Node.js 등) 및 Docker 환경을 지원합니다.
     *   빌드 로그는 S3 및 CloudWatch Logs에 저장되며, 빌드 실패 시 EventBridge를 통해 알림을 받을 수 있습니다.
     *   실습 예제: GitHub 리포지토리와 연동하여 `buildspec.yml` 파일을 통해 특정 문자열(`Congratulations`)이 코드에 포함되어 있는지 테스트하는 빌드 프로젝트 생성 및 CodePipeline에 통합.
@@ -41,3 +93,4 @@
     *   EventBridge를 통해 패키지 변경 사항을 감지하고 CodePipeline 등을 트리거할 수 있습니다.
     *   리소스 정책을 사용하여 교차 계정 액세스를 허용할 수 있습니다.
     *   실습 예제: CodeArtifact 리포지토리 생성, CloudShell에서 `pip`를 사용하여 Python 패키지를 CodeArtifact를 통해 설치하고 패키지가 리포지토리에 저장되는 과정 확인.
+

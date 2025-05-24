@@ -318,6 +318,72 @@ CloudHSM은 전용 하드웨어 보안 모듈(HSM)을 제공하여 사용자가 
     ```
 - **Lambda와 연동**: 환경 변수(예: `DEV_OR_PROD`)를 사용하여 동적으로 파라미터 경로를 구성하고, Lambda 실행 역할에 SSM 접근 권한 및 (SecureString의 경우) KMS 복호화 권한을 부여합니다.
 
+### 6.6. NoChangeNotification 정책과 EventBridge 통합
+
+NoChangeNotification 정책은 매개변수가 일정 기간 동안 변경되지 않았을 때 알림을 발생시키는 고급 티어 전용 기능입니다.
+
+#### 6.6.1. 구현 단계
+1. **고급 티어로 업그레이드**:
+    - 표준 티어에서는 정책 설정이 불가능합니다.
+    - 고급 티어로 업그레이드해야 NoChangeNotification 정책을 사용할 수 있습니다.
+    - AWS CLI 명령어:
+    ```bash
+    aws ssm update-parameter --name "/my-app/prod/db-url" --tier Advanced
+    ```
+
+2. **NoChangeNotification 정책 추가**:
+    - 매개변수의 LastModifiedTime을 기준으로 동작합니다.
+    - 지정된 기간(예: 90일) 동안 변경이 없으면 EventBridge 이벤트가 발생합니다.
+    - AWS CLI 명령어:
+    ```bash
+    aws ssm put-parameter --name "/my-app/prod/db-url" --value "your-value" --type String --policies '[{"Type": "NoChangeNotification","Attributes": {"After": "90"}}]'
+    ```
+
+3. **EventBridge 규칙 설정**:
+    ```json
+    {
+      "source": ["aws.ssm"],
+      "detail-type": ["Parameter Store Policy Action"],
+      "detail": {
+        "operation": ["NoChangeNotification"],
+        "name": ["/my-app/prod/db-url"]
+      }
+    }
+    ```
+
+4. **SNS 주제 생성 및 구독**:
+    - EventBridge 규칙의 대상으로 SNS 주제를 지정합니다.
+    - SNS 주제에 이메일, SMS 등의 구독을 추가하여 알림을 받습니다.
+
+#### 6.6.2. 주의사항
+- **티어 제한**: NoChangeNotification 정책은 고급 티어에서만 사용 가능합니다.
+- **비용**: 고급 티어는 매개변수당 월 $0.05의 비용이 발생합니다.
+- **정책 조합**: 여러 정책(예: ExpirationNotification + NoChangeNotification)을 동시에 적용할 수 있습니다.
+- **EventBridge 규칙**: 정책이 없으면 이벤트가 발생하지 않으므로, EventBridge 규칙만 설정하는 것은 의미가 없습니다.
+
+#### 6.6.3. 사용 예시 (Python - Boto3)
+```python
+import boto3
+
+ssm = boto3.client('ssm')
+
+# 매개변수를 고급 티어로 업그레이드하고 NoChangeNotification 정책 설정
+response = ssm.put_parameter(
+    Name='/my-app/prod/db-url',
+    Value='your-value',
+    Type='String',
+    Tier='Advanced',
+    Policies='[{"Type": "NoChangeNotification","Attributes": {"After": "90"}}]',
+    Overwrite=True
+)
+
+# 정책 확인
+response = ssm.get_parameter(
+    Name='/my-app/prod/db-url'
+)
+print(f"Parameter Version: {response['Parameter']['Version']}")
+```
+
 ## 7. AWS Secrets Manager
 
 암호, API 키, 데이터베이스 자격 증명 등 비밀 정보를 안전하게 저장, 관리, 순환하기 위한 서비스입니다. SSM Parameter Store보다 비밀 관리에 특화된 기능을 제공합니다.

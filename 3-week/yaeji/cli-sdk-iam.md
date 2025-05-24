@@ -115,3 +115,62 @@ aws s3 ls --profile mfa
 - 자격증명 정보
 - 날짜 및 유효 기간
 - 실제 서명 값
+
+## EC2 인스턴스에서 다중 환경 AWS CLI 관리
+
+### 다중 환경 CLI 사용 시나리오
+- EC2 인스턴스에서 개발/프로덕션 환경을 오가며 AWS CLI 사용
+- 기본 IAM 역할과 액세스 키 세트 존재
+- 추가 프로덕션 액세스 키 및 역할 정보 제공됨
+
+### 최적의 해결방안
+- AWS CLI 구성 파일에서 역할별 프로필 생성
+- CLI 명령 실행 시 `--profile` 옵션으로 역할 전환
+
+### 구성 예시
+```ini
+# ~/.aws/credentials
+[dev]
+aws_access_key_id = ABC...
+aws_secret_access_key = XYZ...
+
+[prod]
+aws_access_key_id = DEF...
+aws_secret_access_key = UVW...
+```
+
+```ini
+# ~/.aws/config
+[profile dev]
+region = us-west-2
+
+[profile prod]
+region = us-east-1
+role_arn = arn:aws:iam::123456789012:role/ProductionAccessRole
+source_profile = dev
+```
+
+### CLI 사용 예시
+```bash
+# 프로덕션 프로필로 S3 버킷 조회
+aws s3 ls --profile prod
+```
+
+### 다른 방법과 비교
+| 방법 | 평가 | 이유 |
+|------|------|------|
+| CLI 프로필 사용 | ✅ 권장 | 안전하고 관리가 용이함 |
+| 인스턴스 사용자 데이터에 저장 | ❌ 비권장 | 보안에 취약하고 시작 시에만 실행 |
+| 인스턴스 메타데이터에 저장 | ❌ 비권장 | 읽기 전용이며 자격증명 저장에 부적합 |
+| 인스턴스 프로필 생성 | ❌ 비권장 | EC2-역할 연결용으로 CLI 프로필과 다름 |
+
+### 보안 모범 사례
+1. 자격증명 파일 권한 설정 (600)
+2. 정기적인 액세스 키 로테이션
+3. 최소 권한 원칙 준수
+4. 환경별 명확한 프로필 이름 사용
+
+### 주의사항
+- 환경 변수가 프로필 설정보다 우선순위가 높음
+- 프로덕션 자격증명은 특별히 안전하게 관리
+- MFA가 필요한 경우 세션 토큰 활용

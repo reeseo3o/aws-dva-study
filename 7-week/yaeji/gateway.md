@@ -36,8 +36,35 @@ API 게이트웨이를 배포하는 방식으로, 클라이언트가 API에 액�
 API 게이트웨이가 백엔드와 통신하는 방식입니다.
 - **Lambda 함수 통합**:
     - 가장 일반적인 서버리스 애플리케이션 패턴.
-    - `AWS_PROXY` (Lambda 프록시 통합): 클라이언트 요청 전체가 Lambda 함수 이벤트로 전달되고, Lambda 함수의 출력이 HTTP 응답으로 매핑됨. 수정 없이 요청/응답 전달.
-    - Lambda 직접 통합: 매핑 템플릿을 사용하여 요청/응답 변환 가능.
+    - **Lambda 프록시 통합 (Lambda Proxy Integration)**:
+        - API Gateway가 클라이언트의 전체 HTTP 요청을 Lambda 함수에 그대로 전달.
+        - Lambda 함수는 특정 형식의 JSON 응답을 반환해야 함.
+        - 매핑 템플릿이나 변환 없이 자동으로 처리됨.
+        - **장점**:
+            - 설정이 매우 간단함.
+            - API Gateway 설정 변경 없이 Lambda 함수에서 모든 로직을 처리할 수 있음.
+        - **단점**:
+            - 요청/응답 형식을 API Gateway 수준에서 변경할 수 없음.
+            - Lambda 함수가 API Gateway의 응답 형식을 정확히 따라y야 함.
+    - **Lambda 사용자 정의 통합 (Lambda Custom Integration)**:
+        - API Gateway에서 매핑 템플릿을 사용하여 요청과 응답을 변환할 수 있음.
+        - 입력과 출력 형식을 완벽하게 제어할 수 있음.
+        - VTL(Velocity Template Language)을 사용하여 매핑 템플릿을 작성.
+        - **장점**:
+            - 요청/응답 형식을 완벽하게 제어할 수 있음.
+            - Lambda 함수는 API Gateway의 형식에 구애받지 않고 자유롭게 구현할 수 있음.
+        - **단점**:
+            - 설정이 복잡하고 VTL 문법을 이해해야 함.
+            - 매핑 템플릿 관리에 추가적인 노력이 필요함.
+    - **통합 방식 선택 가이드**:
+        - Lambda 프록시 통합 선택 시기:
+            - 빠른 API 프로토타이핑이 필요할 때
+            - 단순한 REST API를 구현할 때
+            - Lambda 함수에서 모든 로직을 처리하고 싶을 때
+        - Lambda 사용자 정의 통합 선택 시기:
+            - 요청/응답 형식의 세밀한 제어가 필요할 때
+            - 기존 백엔드 시스템과의 호환성이 중요할 때
+            - API Gateway 수준에서 요청/응답 변환이 필요할 때
 - **HTTP 통합**:
     - 온프레미스 또는 클라우드의 HTTP 엔드포인트(예: Application Load Balancer)를 백엔드로 사용.
     - `HTTP_PROXY` (HTTP 프록시 통합): 요청을 백엔드로 직접 전달.
