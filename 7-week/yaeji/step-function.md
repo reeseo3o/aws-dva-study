@@ -9,6 +9,154 @@ AWS Step Functions는 분산 애플리케이션 및 마이크로서비스의 구
 *   **실행 (Execution)**: 상태 머신이 시작되어 워크플로우가 진행되는 인스턴스입니다. 각 실행은 고유 ID를 가지며, 진행 상황과 결과를 추적할 수 있습니다.
 *   **태스크 (Task)**: 상태 머신 내에서 특정 작업을 수행하는 상태 유형입니다. Lambda 함수 호출, ECS 작업 실행, DynamoDB 항목 삽입/가져오기, SNS/SQS 메시지 게시 등 다양한 AWS 서비스와 통합될 수 있습니다.
 
+## 1.1. Amazon States Language (ASL) 상세
+
+Amazon States Language는 AWS Step Functions에서 상태 머신을 정의하기 위한 JSON 기반의 선언형 언어입니다. ASL을 사용하면 복잡한 워크플로우를 구조화된 방식으로 정의할 수 있습니다.
+
+### 1.1.1. ASL의 주요 구성 요소
+
+* **States**: 상태의 집합으로, 각각 하나의 작업을 수행합니다.
+* **StartAt**: 어떤 상태에서 시작할지를 지정합니다.
+* **Type**: 상태의 유형을 지정합니다.
+* **Next**: 다음 상태로의 이동 경로를 지정합니다.
+* **End**: 해당 상태에서 워크플로우가 종료되는지를 지정합니다.
+
+### 1.1.2. 상태 유형 (State Types)
+
+1. **Task State**
+```json
+{
+  "ProcessPayment": {
+    "Type": "Task",
+    "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ProcessPaymentFunction",
+    "Next": "ConfirmOrder",
+    "Retry": [
+      {
+        "ErrorEquals": ["ServiceUnavailable"],
+        "IntervalSeconds": 2,
+        "MaxAttempts": 3,
+        "BackoffRate": 2.0
+      }
+    ],
+    "Catch": [
+      {
+        "ErrorEquals": ["PaymentError"],
+        "Next": "HandleError"
+      }
+    ]
+  }
+}
+```
+
+2. **Choice State**
+```json
+{
+  "CheckOrderAmount": {
+    "Type": "Choice",
+    "Choices": [
+      {
+        "Variable": "$.orderAmount",
+        "NumericGreaterThan": 1000,
+        "Next": "ApplyPremiumDiscount"
+      },
+      {
+        "Variable": "$.orderAmount",
+        "NumericGreaterThan": 500,
+        "Next": "ApplyStandardDiscount"
+      }
+    ],
+    "Default": "NoDiscount"
+  }
+}
+```
+
+3. **Parallel State**
+```json
+{
+  "ProcessOrder": {
+    "Type": "Parallel",
+    "Branches": [
+      {
+        "StartAt": "UpdateInventory",
+        "States": {
+          "UpdateInventory": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:UpdateInventoryFunction",
+            "End": true
+          }
+        }
+      },
+      {
+        "StartAt": "ChargeCustomer",
+        "States": {
+          "ChargeCustomer": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:REGION:ACCOUNT:function:ChargeCustomerFunction",
+            "End": true
+          }
+        }
+      }
+    ],
+    "Next": "SendConfirmation"
+  }
+}
+```
+
+### 1.1.3. 오류 처리
+
+ASL은 두 가지 주요 오류 처리 메커니즘을 제공합니다:
+
+1. **Retry**: 작업 실패 시 재시도 로직을 정의
+   * ErrorEquals: 재시도할 오류 유형
+   * IntervalSeconds: 재시도 간격
+   * MaxAttempts: 최대 재시도 횟수
+   * BackoffRate: 재시도 간격 증가율
+
+2. **Catch**: 특정 오류 발생 시 대체 경로 정의
+   * ErrorEquals: 포착할 오류 유형
+   * Next: 오류 발생 시 이동할 상태
+   * ResultPath: 오류 정보를 저장할 경로
+
+### 1.1.4. 주요 사용 사례
+
+1. **주문 처리 워크플로우**
+   * 주문 검증
+   * 재고 확인
+   * 결제 처리
+   * 배송 처리
+   * 알림 발송
+
+2. **사용자 등록 프로세스**
+   * 사용자 정보 검증
+   * 계정 생성
+   * 환영 이메일 발송
+   * 초기 설정 가이드 제공
+
+3. **데이터 처리 파이프라인**
+   * 데이터 수집
+   * 데이터 변환
+   * 데이터 검증
+   * 데이터베이스 저장
+   * 결과 보고
+
+### 1.1.5. ASL의 장점
+
+1. **가시성**
+   * JSON 형식으로 워크플로우를 명확하게 정의
+   * Step Functions 콘솔에서 시각적으로 확인 가능
+
+2. **유지보수성**
+   * 로직이 코드가 아닌 구성으로 관리됨
+   * 변경사항 적용이 용이
+
+3. **오류 처리**
+   * 재시도 로직을 선언적으로 정의
+   * 오류 상황에 대한 대체 경로 지정 가능
+
+4. **확장성**
+   * 새로운 단계 추가가 용이
+   * 기존 로직 수정 없이 새로운 기능 통합 가능
+
 ## 2. 주요 상태 유형
 
 Step Functions는 워크플로우를 구성하기 위한 다양한 상태 유형을 제공합니다.
