@@ -44,8 +44,62 @@ CloudWatch는 AWS 리소스와 애플리케이션에 대한 **중앙 집중식 �
         *   스크린샷, 로드 시간 데이터 등을 저장하며, 문제 발생 시 경보를 트리거할 수 있습니다.
 
 *   **데이터 수집 방식 (EC2/온프레미스):**
-    *   **CloudWatch Agent:** 로그 및 시스템 수준 지표(RAM, Disk IO, 프로세스 등)를 수집하기 위해 인스턴스에 설치해야 하는 소프트웨어입니다. (구버전: Logs Agent, 최신: Unified Agent)
-    *   Unified Agent는 로그와 상세 지표를 모두 수집하며 중앙 집중식 구성이 가능합니다.
+    *   **CloudWatch Agent:**
+        *   **설치 및 구성:**
+            *   EC2 인스턴스에 CloudWatch 에이전트를 설치하여 추가적인 시스템 수준 메트릭과 로그를 수집
+            *   필요한 IAM 권한: `CloudWatchAgentServerPolicy` (AWS 관리형 정책)
+            *   구성 파일을 통해 수집할 메트릭과 로그를 지정 (JSON 형식)
+            *   Parameter Store나 Secrets Manager를 통해 구성 파일 중앙 관리 가능
+        *   **Auto Scaling 환경에서의 설정:**
+            *   시작 템플릿 또는 시작 구성에 적절한 IAM 역할 지정 필수
+            *   사용자 데이터 스크립트를 통해 에이전트 자동 설치 및 구성
+            *   CloudWatch 에이전트 구성 파일을 Parameter Store에 저장하고 참조하는 것을 권장
+        *   **주요 고려사항:**
+            *   IAM 역할에 `CloudWatchAgentServerPolicy` 정책 연결 확인
+            *   에이전트 설치 및 구성 자동화 (사용자 데이터 스크립트)
+            *   구성 파일의 중앙 관리 (Parameter Store 활용)
+            *   메트릭 수집 간격 및 저장 기간 최적화
+            *   비용 관리 (상세 모니터링 사용 시 추가 비용 발생)
+
+    *   **Auto Scaling 환경에서의 CloudWatch 구성 예시:**
+        ```bash
+        #!/bin/bash
+        # CloudWatch 에이전트 설치
+        wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+        rpm -U ./amazon-cloudwatch-agent.rpm
+
+        # Parameter Store에서 구성 파일 가져오기
+        /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c ssm:/cloudwatch-agent/config
+
+        # 에이전트 시작
+        systemctl start amazon-cloudwatch-agent
+        ```
+
+        *   **구성 파일 예시 (Parameter Store에 저장):**
+        ```json
+        {
+            "agent": {
+                "metrics_collection_interval": 60
+            },
+            "metrics": {
+                "metrics_collected": {
+                    "cpu": {
+                        "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+                        "metrics_collection_interval": 60
+                    },
+                    "mem": {
+                        "measurement": ["mem_used_percent"],
+                        "metrics_collection_interval": 60
+                    },
+                    "disk": {
+                        "measurement": ["disk_used_percent"],
+                        "resources": ["/"],
+                        "metrics_collection_interval": 60
+                    }
+                }
+            }
+        }
+        ```
 
 *   **도식화 (간단 흐름):**
     ```
