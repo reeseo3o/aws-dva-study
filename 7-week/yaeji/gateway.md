@@ -114,6 +114,41 @@ API 게이트웨이가 백엔드와 통신하는 방식입니다.
     - 토큰 기반(Bearer 토큰, JWT, OAuth 등) 또는 요청 파라미터 기반 인증 가능.
     - Lambda 함수는 인증 성공 시 IAM 정책을 반환하며, 이 정책은 캐싱될 수 있음.
     - 서드파티 인증 시스템과의 통합 등 유연한 인증 처리에 적합.
+    - **주요 특징**:
+        - **캐싱 기능**:
+            - 응답은 기본적으로 300초(5분) 동안 캐싱됨
+            - TTL(Time To Live)을 0으로 설정하여 캐싱 비활성화 가능
+            - 동일한 토큰/요청에 대한 반복적인 Lambda 호출 감소
+        - **인증 워크플로우**:
+            1. 클라이언트가 API 요청
+            2. API Gateway가 Lambda Authorizer 호출
+            3. Lambda Authorizer가 정책 문서 반환
+            4. API Gateway가 정책을 평가
+            5. 허용/거부 결정에 따라 API 메서드 실행 또는 403 Forbidden 반환
+        - **인증 유형**:
+            - **토큰 기반 Authorizer (TOKEN)**:
+                - Bearer 토큰 인증에 적합
+                - JWT나 OAuth 토큰 검증에 주로 사용
+                - 헤더에서 토큰을 추출하여 검증
+            - **요청 파라미터 기반 Authorizer (REQUEST)**:
+                - 헤더, 쿼리 스트링 파라미터, 컨텍스트 변수, 스테이지 변수 조합으로 인증
+                - IP 기반 화이트리스팅, 여러 헤더 조합 인증 등에 활용
+        - **오류 처리**:
+            - Lambda Authorizer 오류/타임아웃 시 403 Forbidden 응답 반환
+            - 커스텀 오류 메시지 설정 가능
+            - 기본 타임아웃 10초, 최대 30초까지 설정 가능
+        - **보안 고려사항**:
+            - Lambda Authorizer는 API Gateway에서 실행 권한 필요
+            - 토큰/자격증명은 항상 HTTPS를 통해 전송
+            - 민감한 인증 정보는 AWS Secrets Manager나 Parameter Store에 저장 권장
+        - **모니터링과 로깅**:
+            - CloudWatch Logs를 통한 Lambda Authorizer 로깅
+            - CloudWatch Metrics를 통한 성능 모니터링
+            - X-Ray를 통한 상세한 트레이싱 가능
+        - **비용 고려사항**:
+            - Lambda Authorizer 호출당 비용 발생
+            - 캐싱을 통한 비용 최적화 가능
+            - 인증 실패한 요청에도 Lambda 비용 발생
 - **리소스 정책 (Resource Policies)**:
     - API 게이트웨이 자체에 연결되는 JSON 정책.
     - 교차 계정 액세스 허용, 특정 IP 주소 범위 허용/차단, 특정 VPC 엔드포인트에서의 호출만 허용 등의 접근 제어.

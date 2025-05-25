@@ -147,3 +147,53 @@
 *   **주의사항**:
     *   STOPPED 상태의 인스턴스 등록 해제는 반드시 Amazon ECS 콘솔에서 수행해야 함 (Amazon EC2 콘솔이 아님)
     *   수동 등록 해제가 필요한 경우, 먼저 인스턴스를 종료한 후 등록을 취소하는 순서로 진행
+
+### 12. ECS 클러스터 쿼리 언어 (Cluster Query Language)
+
+* **개념**: 
+    * ECS의 컨테이너 인스턴스(EC2 기반)들을 속성(attribute) 기반으로 그룹화하거나 필터링하는 데 사용되는 표현식 언어입니다.
+    * Task 배치 제한(Placement Constraints)의 `memberOf` 타입과 함께 사용하여 특정 속성을 가진 인스턴스에만 작업을 배치하도록 제어할 수 있습니다.
+
+* **주요 속성 예시**:
+    * `ecs.availability-zone`: 가용 영역
+    * `ecs.instance-type`: EC2 인스턴스 타입
+    * `ecs.cpu-architecture`: CPU 아키텍처 (x86_64, arm64 등)
+    * 사용자 정의 메타데이터 속성
+
+* **문법 예시**:
+    ```json
+    // 특정 인스턴스 타입에만 배치
+    "placementConstraints": [
+      {
+        "type": "memberOf",
+        "expression": "attribute:ecs.instance-type == t3.medium"
+      }
+    ]
+
+    // 특정 가용 영역에만 배치
+    "placementConstraints": [
+      {
+        "type": "memberOf",
+        "expression": "attribute:ecs.availability-zone in [us-west-2a, us-west-2b]"
+      }
+    ]
+
+    // ARM64 아키텍처에만 배치
+    "placementConstraints": [
+      {
+        "type": "memberOf",
+        "expression": "attribute:ecs.cpu-architecture == arm64"
+      }
+    ]
+    ```
+
+* **관련 개념과의 차이점**:
+    * `Task Group`: 단순히 관련 작업(Task)의 논리적 그룹화일 뿐, 인스턴스 속성 기반 그룹화와는 무관합니다.
+    * `Placement Strategy`: spread/binpack/random 등 작업 분산 방식을 정의하는 규칙이며, 속성 기반 필터링과는 다른 개념입니다.
+    * `Placement Constraint (distinctInstance)`: 같은 노드에 동일 서비스가 중복 실행되지 않도록 하는 제약 조건이며, 속성 기반 필터링과는 다릅니다.
+
+* **활용 사례**:
+    * 특정 하드웨어 요구사항(예: GPU)이 있는 작업을 해당 기능을 갖춘 인스턴스에만 배치
+    * 비용 최적화를 위해 특정 인스턴스 타입에만 작업 배치
+    * 고가용성을 위해 여러 가용 영역에 걸쳐 작업 분산
+    * 특정 CPU 아키텍처(ARM/x86)에 최적화된 작업을 해당 아키텍처의 인스턴스에만 배치

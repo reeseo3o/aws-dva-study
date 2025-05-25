@@ -686,3 +686,71 @@
         *   샤드 키 설계 시 확장성 고려
         *   모니터링 및 재샤딩 전략 수립
         *   백업 및 복구 계획 수립
+
+*   **낙관적 잠금(Optimistic Locking) 구현**
+    *   **개요**
+        *   동시성 제어를 위한 버전 기반 잠금 전략
+        *   데이터 일관성 보장 및 동시 수정 충돌 방지
+        *   글로벌 테이블과 함께 사용 시 주의 필요 (최종 작성자 우선 정책과 충돌)
+    
+    *   **구현 방법**
+        *   테이블 매핑 클래스에 버전 속성 추가
+        *   조건부 업데이트를 통한 버전 검증
+        *   충돌 발생 시 재시도 로직 구현
+        ```python
+        def update_with_optimistic_lock(table, item_id, new_data, expected_version):
+            try:
+                response = table.update_item(
+                    Key={'id': item_id},
+                    UpdateExpression='SET #data = :new_data, #version = :new_version',
+                    ConditionExpression='#version = :expected_version',
+                    ExpressionAttributeNames={
+                        '#data': 'data',
+                        '#version': 'version'
+                    },
+                    ExpressionAttributeValues={
+                        ':new_data': new_data,
+                        ':expected_version': expected_version,
+                        ':new_version': expected_version + 1
+                    }
+                )
+                return True
+            except ClientError as e:
+                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                    return False  # 버전 불일치로 업데이트 실패
+                raise e
+        ```
+
+    *   **재시도 메커니즘**
+        *   지수 백오프 적용
+        *   최대 재시도 횟수 제한
+        *   사용자 친화적 에러 처리
+        ```python
+        def update_with_retry(table, item_id, new_data, max_retries=3):
+            retries = 0
+            while retries < max_retries:
+                # 현재 항목 조회
+                current_item = table.get_item(Key={'id': item_id})['Item']
+                current_version = current_item['version']
+                
+                # 업데이트 시도
+                if update_with_optimistic_lock(table, item_id, new_data, current_version):
+                    return True
+                
+                retries += 1
+                time.sleep((2 ** retries) * 0.1)  # 지수 백오프
+            
+            raise Exception("최대 재시도 횟수 초과")
+        ```
+
+    *   **장점**
+        *   데이터 일관성 보장
+        *   동시 수정 충돌 방지
+        *   리소스 효율적 사용
+        *   구현 및 유지보수 용이
+
+    *   **주의사항**
+        *   글로벌 테이블 사용 시 제한사항 존재
+        *   DynamoDBMapper 트랜잭션 작업과 호환성 없음
+        *   높은 동시성 환경에서 재시도 로직 튜닝 필요
+        *   버전 관리로 인한 저장 공간 오버헤드

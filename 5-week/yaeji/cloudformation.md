@@ -75,3 +75,77 @@ AWS CloudFormation은 코드를 사용하여 AWS 인프라 리소스를 효과�
     *   RDS 인스턴스에 `DeletionPolicy: Snapshot`을 적용합니다.
     *   운영 환경 RDS에 `StackPolicy`를 적용하여 보호합니다.
 4.  **자동화된 배포 및 관리**: CI/CD 파이프라인(예: AWS CodePipeline)과 연동하여 템플릿 변경 시 자동으로 스택을 업데이트합니다. StackSets를 사용하여 새로운 AWS 계정이나 리전에 표준 애플리케이션 환경을 신속하게 배포합니다.
+
+### 8. AWS CloudFormation StackSets
+
+StackSets는 단일 작업으로 여러 AWS 계정 및 리전에 걸쳐 스택을 생성, 업데이트 또는 삭제할 수 있게 해주는 CloudFormation의 확장 기능입니다.
+
+#### 주요 특징과 이점
+
+1. **중앙 집중식 관리**
+   - 관리자 계정에서 단일 지점으로 여러 계정과 리전의 스택을 관리
+   - 일관된 리소스 배포와 구성 보장
+   - 조직 전체의 규정 준수 및 보안 정책 적용 용이
+
+2. **배포 옵션**
+   - **동시 배포**: 여러 계정에 동시에 배포할 수 있는 최대 계정 수 지정
+   - **리전 순서**: 배포할 리전의 순서 지정 가능
+   - **실패 허용**: 작업이 중단되기 전 허용되는 실패 수 설정
+   - **보존 기능**: 스택 세트 삭제 시에도 특정 스택 인스턴스 유지 가능
+
+3. **권한 관리**
+   - **관리자 계정**: 스택 세트를 생성하고 관리하는 계정
+   - **대상 계정**: 스택이 실제로 배포되는 계정
+   - **서비스 관리 권한**: AWS Organizations와 통합하여 자동 권한 관리
+   - **자체 관리 권한**: IAM 역할을 통한 수동 권한 관리
+
+4. **운영 모델 예시**
+```yaml
+# stackset-example.yaml
+AWSTemplateFormtVersion: '2010-09-09'
+Parameters:
+  EnvironmentType:
+    Type: String
+    AllowedValues: 
+      - dev
+      - staging
+      - prod
+    Description: Environment type for resource tagging
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::AccountId}-${EnvironmentType}-data'
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentType
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Common security group
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentType
+```
+
+5. **배포 전략**
+   - **점진적 배포**: 소수의 계정/리전으로 시작하여 점차 확장
+   - **롤백 관리**: 자동 롤백 기능 및 실패한 스택의 수동 재시도 가능
+
+6. **모니터링 및 관리**
+   - **스택 작업 상태 추적**: OUTDATED, INOPERABLE, CURRENT 등의 상태 모니터링
+   - **스택 드리프트 감지**: 수동 변경된 리소스 식별 및 일관성 유지 관리
+
+7. **실제 사용 사례**
+   - **보안 통제**: WAF 규칙 배포, CloudWatch 경보 표준화
+   - **규정 준수**: 로깅 구성 자동화, 암호화 정책 적용
+   - **리소스 표준화**: VPC 구성 통일, IAM 정책 관리
+
+8. **모범 사례**
+   - 템플릿 버전 관리 철저
+   - 매개변수 사용으로 유연성 확보
+   - 실패 허용치 신중하게 설정
+   - 정기적인 드리프트 감지 수행
+   - 충분한 테스트 후 배포
