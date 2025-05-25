@@ -92,6 +92,46 @@ Amazon S3(Simple Storage Service)는 AWS의 핵심 서비스 중 하나로, **�
 3. **EC2에서 S3 접근**: **IAM 역할 사용**
 4. **계정 간 액세스**: 버킷 정책으로 다른 계정의 IAM 사용자에게 권한 부여
 
+### S3와 KMS(Key Management Service) 통합
+
+#### KMS를 사용한 서버 측 암호화(SSE-KMS)
+- S3 객체를 KMS 키로 암호화하여 저장
+- 추가적인 보안 계층과 감사 기능 제공
+- AWS 관리형 키(aws/s3) 또는 고객 관리형 키 사용 가능
+
+#### 대용량 파일 업로드 시 고려사항
+1. **멀티파트 업로드 동작**
+   - AWS CLI는 큰 파일을 자동으로 여러 부분으로 나누어 업로드
+   - 각 파트는 개별적으로 암호화되고 업로드됨
+
+2. **필요한 KMS 권한**
+   - `kms:GenerateDataKey*`: 데이터 암호화를 위한 키 생성
+   - `kms:Decrypt`: 멀티파트 업로드 완료 시 파트 검증에 필요
+   
+3. **주의사항**
+   - `kms:Encrypt` 권한은 필수가 아님 (S3는 데이터 키를 사용하여 암호화)
+   - 권한이 없으면 대용량 파일(예: 100GB 이상) 업로드 시 Access Denied 발생
+   - 작은 파일은 멀티파트 업로드를 사용하지 않아 영향 없음
+
+#### 문제 해결
+- Access Denied 오류 발생 시 IAM 정책에 필요한 KMS 권한 추가
+- 권한 예시:
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kms:GenerateDataKey*",
+                "kms:Decrypt"
+            ],
+            "Resource": "arn:aws:kms:region:account-id:key/key-id"
+        }
+    ]
+}
+```
+
 ## 정적 웹사이트 호스팅
 - S3 버킷을 이용한 정적 웹사이트 호스팅 가능
 - 웹사이트 URL 형식:
@@ -119,7 +159,7 @@ Amazon S3(Simple Storage Service)는 AWS의 핵심 서비스 중 하나로, **�
 - **SRR(Same-Region Replication)**: 동일 리전 복제
 
 ### 요구사항
-- 소스와 대상 버킷 모두 버전 관리 활성화 필요
+- 소스와 대상 버킷 모두 **버전 관리 활성화** 필요
 - 서로 다른 AWS 계정에 속한 버킷 간 복제 가능
 - S3 서비스에 적절한 IAM 권한 부여 필요
 

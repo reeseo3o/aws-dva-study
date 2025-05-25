@@ -229,6 +229,84 @@ SSE-KMS를 사용할 때 S3 버킷 키(Bucket Key)를 활성화하면 KMS API �
     -   CloudTrail 내 KMS 관련 이벤트 수 감소.
 - **설정**: S3 버킷 생성 또는 속성 편집 시, 기본 서버 측 암호화 설정에서 SSE-KMS를 선택하고 "버킷 키"를 "활성화"(기본값)로 설정합니다.
 
+## 4.1. S3 SSE-C (Server-Side Encryption with Customer-Provided Keys)
+
+SSE-C는 고객이 직접 제공한 암호화 키를 사용하여 S3에서 서버 측 암호화를 수행하는 방식입니다.
+
+### 4.1.1. SSE-C 주요 특징
+- **키 관리 책임**: 암호화 키는 고객이 직접 제공하고 관리해야 합니다.
+- **암호화 방식**: Amazon S3는 제공된 키로 AES-256 암호화를 수행합니다.
+- **키 저장 방식**: S3는 암호화 키를 저장하지 않고, 요청이 처리된 후 메모리에서 즉시 삭제합니다.
+- **HMAC 저장**: S3는 제공된 키의 HMAC(Hash-based Message Authentication Code) 값만 저장합니다.
+
+### 4.1.2. SSE-C 작동 방식
+1. **업로드 시**:
+   - 클라이언트가 객체와 함께 암호화 키를 HTTPS를 통해 S3에 전송
+   - S3는 제공된 키로 객체를 암호화
+   - S3는 키의 HMAC 값을 계산하여 저장
+   - 원본 암호화 키는 메모리에서 즉시 삭제
+
+2. **다운로드 시**:
+   - 클라이언트가 객체 요청과 함께 암호화 키를 HTTPS를 통해 전송
+   - S3는 제공된 키의 HMAC 값을 계산하여 저장된 HMAC 값과 비교
+   - HMAC 값이 일치하면 객체를 복호화하여 반환
+   - 키가 일치하지 않으면 403 Forbidden 오류 반환
+
+### 4.1.3. 보안 고려사항
+- **키 분실 위험**: 암호화 키를 잃어버리면 객체에 영구적으로 접근 불가능
+- **HMAC의 제한**: 
+  - HMAC 값은 단방향 해시이므로 원본 키를 역산할 수 없음
+  - HMAC 값만으로는 객체를 복호화할 수 없음
+  - HMAC은 단순히 제공된 키가 원본과 동일한지 확인하는 용도로만 사용
+
+### 4.1.4. AWS SDK 사용 예제 (Python)
+```python
+import boto3
+from botocore.config import Config
+
+# HTTPS 강제 설정 (SSE-C는 HTTPS 필수)
+s3 = boto3.client('s3', config=Config(signature_version='s3v4'))
+
+# 업로드 예제
+encryption_key = b'your-32-byte-key'  # 32바이트 키 필요
+s3.put_object(
+    Bucket='your-bucket',
+    Key='encrypted-file.txt',
+    Body=b'Your data here',
+    SSECustomerKey=encryption_key,
+    SSECustomerAlgorithm='AES256'
+)
+
+# 다운로드 예제
+try:
+    response = s3.get_object(
+        Bucket='your-bucket',
+        Key='encrypted-file.txt',
+        SSECustomerKey=encryption_key,
+        SSECustomerAlgorithm='AES256'
+    )
+    data = response['Body'].read()
+except s3.exceptions.ClientError as e:
+    if e.response['Error']['Code'] == '403':
+        print("잘못된 암호화 키 또는 키 누락")
+    raise
+```
+
+### 4.1.5. 모범 사례
+1. **키 관리**:
+   - 안전한 키 저장소 사용 (예: HSM, KMS)
+   - 키 백업 및 복구 절차 수립
+   - 키 순환 정책 수립
+
+2. **전송 보안**:
+   - 항상 HTTPS 사용 (SSE-C는 HTTP 요청 거부)
+   - 키 전송 시 추가 암호화 레이어 고려
+
+3. **모니터링**:
+   - 키 사용 로깅
+   - 접근 실패 모니터링
+   - CloudTrail을 통한 API 호출 감사
+
 ## 5. CloudHSM (Hardware Security Module)
 
 CloudHSM은 전용 하드웨어 보안 모듈(HSM)을 제공하여 사용자가 암호화 키를 완벽하게 제어할 수 있도록 하는 서비스입니다.
@@ -382,6 +460,203 @@ response = ssm.get_parameter(
     Name='/my-app/prod/db-url'
 )
 print(f"Parameter Version: {response['Parameter']['Version']}")
+```
+
+### 6.7. Parameter Store와 AWS 서비스 통합
+
+#### 6.7.1. CloudFormation 통합
+CloudFormation 템플릿에서 Parameter Store의 값을 직접 참조할 수 있습니다:
+
+```yaml
+Parameters:
+  DBPassword:
+    Type: 'AWS::SSM::Parameter::Value<String>'
+    Default: '/prod/app/db/password'
+    NoEcho: true
+
+Resources:
+  MyDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      MasterUserPassword: !Ref DBPassword
+```
+
+#### 6.7.2. Lambda 통합
+Lambda 함수에서 Parameter Store 값을 안전하게 가져올 수 있습니다:
+
+```python
+import boto3
+import json
+
+def lambda_handler(event, context):
+    ssm = boto3.client('ssm')
+    
+    # 파라미터 스토어에서 데이터베이스 설정 가져오기
+    db_config = ssm.get_parameters_by_path(
+        Path='/prod/app/db',
+        WithDecryption=True
+    )
+    
+    # 파라미터 값을 딕셔너리로 변환
+    config = {param['Name'].split('/')[-1]: param['Value'] 
+             for param in db_config['Parameters']}
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Database configuration loaded')
+    }
+```
+
+### 6.8. Parameter Store 버전 관리
+
+Parameter Store는 각 파라미터의 변경 이력을 버전으로 관리합니다.
+
+```python
+import boto3
+
+ssm = boto3.client('ssm')
+
+# 파라미터 업데이트 (새 버전 생성)
+response = ssm.put_parameter(
+    Name='/prod/app/db/password',
+    Value='new-password',
+    Type='SecureString',
+    Overwrite=True
+)
+
+# 특정 버전의 파라미터 조회
+response = ssm.get_parameter(
+    Name='/prod/app/db/password',
+    WithDecryption=True,
+    Version=2
+)
+```
+
+### 6.9. Parameter Store 보안 모범 사례
+
+#### 6.9.1. 암호화 키 관리
+- SecureString 파라미터에는 고객 관리형 KMS 키 사용을 권장합니다.
+- 키 교체를 주기적으로 설정하여 보안을 강화합니다.
+
+#### 6.9.2. 액세스 제어
+- 최소 권한 원칙을 적용하여 필요한 권한만 부여합니다.
+- 경로 기반 IAM 정책을 사용하여 세분화된 접근 제어를 구현합니다.
+- 태그 기반 접근 제어를 활용하여 리소스 관리를 체계화합니다.
+
+예시 IAM 정책:
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ssm:GetParameter",
+                "ssm:GetParameters",
+                "ssm:GetParametersByPath"
+            ],
+            "Resource": "arn:aws:ssm:region:account-id:parameter/prod/app/db/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kms:Decrypt"
+            ],
+            "Resource": "arn:aws:kms:region:account-id:key/key-id"
+        }
+    ]
+}
+```
+
+#### 6.9.3. 모니터링 및 감사
+- CloudTrail 로깅을 활성화하여 모든 API 호출을 추적합니다.
+- CloudWatch 알림을 설정하여 중요한 변경사항을 모니터링합니다.
+- 정기적으로 접근 권한을 검토하고 불필요한 권한을 제거합니다.
+
+#### 6.9.4. 운영 모범 사례
+1. **명명 규칙 표준화**
+   - 일관된 경로 구조 사용 (예: /환경/애플리케이션/구성요소/파라미터)
+   - 의미있는 파라미터 이름 사용
+
+2. **환경별 경로 구조화**
+   ```
+   /prod/app/db/url
+   /prod/app/db/username
+   /prod/app/db/password
+   /dev/app/db/url
+   /dev/app/db/username
+   /dev/app/db/password
+   ```
+
+3. **정기적인 파라미터 검토**
+   - 사용하지 않는 파라미터 정리
+   - 값의 정확성 검증
+   - 만료된 비밀 정보 업데이트
+
+### 6.10. Parameter Store와 EventBridge 통합
+
+Parameter Store의 변경사항을 모니터링하고 자동화된 작업을 트리거할 수 있습니다.
+
+#### 6.10.1. 파라미터 변경 모니터링
+```json
+{
+  "source": ["aws.ssm"],
+  "detail-type": ["Parameter Store Change"],
+  "detail": {
+    "name": ["/prod/app/db/password"],
+    "operation": ["Update"]
+  }
+}
+```
+
+#### 6.10.2. 파라미터 만료 알림
+```json
+{
+  "source": ["aws.ssm"],
+  "detail-type": ["Parameter Store Policy Action"],
+  "detail": {
+    "operation": ["ExpirationNotification"],
+    "name": ["/prod/app/db/password"]
+  }
+}
+```
+
+### 6.11. 고급 파라미터 정책 예제
+
+여러 정책을 동시에 적용하여 복잡한 관리 요구사항을 충족할 수 있습니다.
+
+```python
+import boto3
+import json
+
+ssm = boto3.client('ssm')
+
+# 만료 및 변경 없음 알림 정책 동시 적용
+policies = [
+    {
+        "Type": "Expiration",
+        "Version": "1.0",
+        "Attributes": {
+            "Timestamp": "2024-12-31T23:59:59.000Z"
+        }
+    },
+    {
+        "Type": "NoChangeNotification",
+        "Version": "1.0",
+        "Attributes": {
+            "After": "90"
+        }
+    }
+]
+
+response = ssm.put_parameter(
+    Name='/prod/app/db/password',
+    Value='my-secure-password',
+    Type='SecureString',
+    Policies=json.dumps(policies),
+    Tier='Advanced',
+    Overwrite=True
+)
 ```
 
 ## 7. AWS Secrets Manager

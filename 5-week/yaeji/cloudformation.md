@@ -149,3 +149,110 @@ Resources:
    - 실패 허용치 신중하게 설정
    - 정기적인 드리프트 감지 수행
    - 충분한 테스트 후 배포
+
+### 9. CloudFront Functions를 활용한 JWT 검증 예시
+
+CloudFormation을 사용하여 CloudFront Functions로 JWT 검증을 구현하는 예시입니다:
+
+```yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront Function for JWT Validation'
+
+Resources:
+  JWTValidationFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: jwt-validation
+      AutoPublish: true
+      FunctionConfig:
+        Comment: 'Validates JWT tokens in Authorization header'
+        Runtime: cloudfront-js-1.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var headers = request.headers;
+          
+          // Authorization 헤더 확인
+          if (!headers.authorization) {
+            return {
+              statusCode: 401,
+              statusDescription: 'Unauthorized',
+              body: 'Authorization header is missing'
+            };
+          }
+          
+          try {
+            // JWT 토큰 추출 (Bearer 스키마 사용 가정)
+            var token = headers.authorization.value.split(' ')[1];
+            
+            // JWT 검증 로직
+            if (!validateJWT(token)) {
+              return {
+                statusCode: 401,
+                statusDescription: 'Unauthorized',
+                body: 'Invalid JWT token'
+              };
+            }
+            
+            // 유효한 토큰인 경우 원본 요청 전달
+            return request;
+          } catch (error) {
+            return {
+              statusCode: 500,
+              statusDescription: 'Internal Server Error',
+              body: 'Error processing JWT token'
+            };
+          }
+        }
+        
+        function validateJWT(token) {
+          // JWT 검증 로직 구현
+          // - 토큰 구조 확인
+          // - 서명 검증
+          // - 만료 시간 확인
+          // - 발행자 확인
+          // 등의 로직이 여기에 구현됨
+          return true; // 실제 구현에서는 적절한 검증 후 반환
+        }
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultCacheBehavior:
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt JWTValidationFunction.FunctionARN
+          # 기타 캐시 동작 설정...
+        # 기타 배포 설정...
+
+Outputs:
+  FunctionARN:
+    Description: 'ARN of the CloudFront Function'
+    Value: !GetAtt JWTValidationFunction.FunctionARN
+  DistributionId:
+    Description: 'ID of the CloudFront Distribution'
+    Value: !Ref CloudFrontDistribution
+```
+
+이 템플릿의 주요 특징:
+
+1. **CloudFront Function 정의**
+   - `AWS::CloudFront::Function` 리소스 타입 사용
+   - JavaScript 런타임으로 JWT 검증 로직 구현
+   - `AutoPublish: true`로 설정하여 자동 배포
+
+2. **CloudFront Distribution 연결**
+   - Function을 Viewer Request 이벤트에 연결
+   - `FunctionAssociations` 속성을 통해 연결 설정
+
+3. **보안 고려사항**
+   - 엣지에서 조기 요청 필터링
+   - 백엔드 리소스 보호
+   - 지연 시간 최소화
+
+4. **운영 이점**
+   - 서버리스 아키텍처
+   - 글로벌 엣지 로케이션 활용
+   - 높은 확장성과 가용성

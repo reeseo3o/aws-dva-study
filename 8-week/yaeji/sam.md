@@ -272,3 +272,39 @@ sam deploy --template-file packaged.yaml --stack-name <stack-name> --capabilitie
 1.  Amazon EC2 인스턴스에서 SAM 템플릿을 빌드합니다 - SAM은 로컬 환경에서도 잘 동작하므로 EC2가 필수가 아님
 2.  AWS CodePipeline에서 SAM 템플릿을 배포합니다 - CI/CD 자동화는 선택사항이며, 직접 배포와는 별개
 3.  AWS SDK로 CodeDeploy 사용하여 SAM 템플릿 빌드 - SAM은 CodeDeploy를 배포 대상으로는 사용할 수 있지만, 빌드에 SDK는 불필요
+
+## 11. SAM 템플릿의 Transform 섹션
+
+### Transform 섹션의 중요성
+* **정의**: `Transform` 섹션은 SAM 템플릿을 CloudFormation이 이해할 수 있는 형식으로 변환하는 데 필요한 핵심 요소입니다.
+* **목적**: AWS SAM 구문을 사용하여 템플릿에서 리소스를 선언할 수 있게 합니다.
+* **위치**: 템플릿 파일 상단에 위치해야 합니다.
+
+### Transform 섹션 사용법
+```yaml
+Transform: AWS::Serverless-2016-10-31  # SAM 버전 지정
+
+Resources:
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: nodejs18.x
+      CodeUri: ./src
+```
+
+### Transform 섹션의 특징
+* **버전 지정**: `AWS::Serverless-2016-10-31`은 현재 SAM의 표준 버전을 나타냅니다.
+* **자동 변환**: AWS::Serverless 변환은 AWS CloudFormation에서 호스팅되는 매크로로, SAM 구문으로 작성된 템플릿을 CloudFormation 호환 템플릿으로 자동 변환합니다.
+* **리전 독립성**: Transform 섹션을 포함한 템플릿은 여러 AWS 리전에서 재사용할 수 있습니다.
+
+### Transform 섹션 vs 다른 섹션들
+* **Parameters**: 런타임에 전달되는 변수를 정의하는 섹션으로, SAM 버전과는 무관
+* **Resources**: 실제 AWS 리소스를 정의하는 섹션으로, SAM 버전 지정과는 관련 없음
+* **Mappings**: 조건부 값 매핑을 위한 섹션으로, SAM 변환과는 무관
+
+### Transform 섹션 사용의 이점
+1. **간단한 문법**: SAM의 간단한 문법을 사용하여 서버리스 리소스를 정의할 수 있습니다.
+2. **자동 변환**: CloudFormation이 SAM 템플릿을 자동으로 변환하여 처리합니다.
+3. **재사용성**: 여러 리전에서 동일한 템플릿을 재사용할 수 있습니다.
+4. **유지보수**: 서버리스 애플리케이션의 인프라를 코드로 관리할 수 있습니다.

@@ -82,35 +82,68 @@
         *   다른 정렬 키 사용
         *   강력한 일관된 읽기 지원
         *   테이블당 최대 5개 생성 가능
+        *   각 파티션 키 값당 10GB 제한
+        *   기본 테이블의 용량을 공유
     *   **글로벌 보조 인덱스 (GSI)**
         *   언제든지 생성/삭제 가능
         *   다른 파티션 키와 정렬 키 사용 가능
         *   최종적 일관된 읽기만 지원
         *   테이블당 최대 20개 생성 가능
         *   별도의 RCU/WCU 설정 필요
-        *   **용량 관리 주요 포인트**
-            *   **WCU (Write Capacity Units) 관리**
-                *   GSI의 WCU는 반드시 기본 테이블의 WCU보다 크거나 같아야 함
-                *   기본 테이블 쓰기 작업 시 GSI도 자동 업데이트되어야 하기 때문
-                *   GSI의 WCU가 부족하면 기본 테이블의 쓰기 작업도 제한(throttle)됨
-            *   **RCU (Read Capacity Units) 관리**
-                *   GSI의 RCU는 기본 테이블의 RCU와 독립적으로 설정 가능
-                *   GSI에 대한 쿼리는 GSI의 RCU를 소비
-                *   기본 테이블의 RCU와 GSI의 RCU는 서로 영향을 주지 않음
-            *   **Auto Scaling 설정**
-                *   GSI의 WCU/RCU에 대해 자동 확장/축소 설정 가능
-                *   목표 사용률(예: 70%)을 기준으로 용량 자동 조정
-                *   최소/최대 용량 범위 설정 필요
-            *   **모니터링 및 경고**
-                *   CloudWatch를 통한 용량 사용량 모니터링
-                *   제한(throttling) 이벤트에 대한 경보 설정
-                *   정기적인 용량 사용량 분석 수행
-            *   **모범 사례**
-                *   GSI 생성 시 초기 WCU를 기본 테이블의 WCU보다 약간 높게 설정
-                *   Auto Scaling 설정으로 자동 용량 조정
-                *   CloudWatch 경보를 설정하여 제한(throttling) 모니터링
-                *   정기적인 용량 사용량 분석 수행
-                *   비용 최적화를 위해 불필요한 GSI 제거
+        *   크기 제한 없음
+        *   비동기 업데이트로 인한 데이터 일관성 지연 가능
+
+    *   **인덱스 프로젝션 유형**
+        *   `KEYS_ONLY`: 
+            *   인덱스 키와 기본 테이블의 키만 포함
+            *   최소 스토리지 비용
+            *   키 기반 조회만 필요한 경우 적합
+        *   `INCLUDE`: 
+            *   지정된 속성만 선택적으로 포함
+            *   스토리지와 성능의 균형 필요 시 사용
+            *   특정 속성만 자주 조회하는 경우 적합
+        *   `ALL`: 
+            *   모든 속성을 포함
+            *   추가 GetItem 호출 회피 필요 시 사용
+            *   모든 속성에 대한 빈번한 조회 시 적합
+
+    *   **인덱스 선택 가이드라인**
+        *   **LSI 선택 기준**:
+            *   강력한 일관성이 필수적인 경우
+            *   단일 파티션 내 쿼리가 대부분인 경우
+            *   비용 최적화가 중요한 경우
+            *   파티션 키당 데이터가 10GB 미만인 경우
+        *   **GSI 선택 기준**:
+            *   테이블 전체 범위의 쿼리가 필요한 경우
+            *   유연한 키 구성이 필요한 경우
+            *   최종적 일관성으로 충분한 경우
+            *   데이터 크기가 큰 경우
+
+    *   **인덱스 성능 최적화**
+        *   적절한 프로젝션 유형 선택
+        *   쿼리 패턴에 맞는 키 구성
+        *   배치 작업 활용
+        *   페이지네이션 구현
+        *   필요한 속성만 프로젝션
+
+    *   **인덱스 비용 고려사항**
+        *   **LSI 비용 요소**:
+            *   기본 테이블의 WCU/RCU 공유
+            *   추가 스토리지 비용 (프로젝션된 속성에 따라)
+            *   파티션 키당 10GB 제한으로 인한 설계 제약
+        *   **GSI 비용 요소**:
+            *   별도의 WCU/RCU 비용
+            *   프로젝션된 속성에 따른 스토리지 비용
+            *   데이터 복제로 인한 추가 비용
+
+    *   **인덱스 모니터링**
+        *   CloudWatch 메트릭스 활용
+            *   ConsumedReadCapacityUnits
+            *   ConsumedWriteCapacityUnits
+            *   ThrottledRequests
+        *   성능 지표 모니터링
+        *   용량 사용량 추적
+        *   스로틀링 이벤트 감지
 
 *   **DynamoDB Streams**
     *   테이블의 데이터 수정 이벤트를 시간 순서대로 기록
@@ -121,6 +154,45 @@
         *   OLD_IMAGE: 수정 전의 전체 항목 이미지
         *   NEW_AND_OLD_IMAGES: 수정 전후의 항목 이미지
     *   Lambda 함수와 통합하여 이벤트 기반 아키텍처 구현
+        *   **Lambda 함수 호출 유형**
+            *   동기(Synchronous) 호출
+                *   `RequestResponse` (기본값)
+                *   함수 실행 완료까지 대기
+                *   응답에 함수 실행 결과 포함
+                *   실시간 처리가 필요한 경우 적합
+            *   비동기(Asynchronous) 호출
+                *   `Event` 타입으로 호출
+                *   즉시 응답 반환 (202 상태 코드)
+                *   백그라운드에서 함수 실행
+                *   자동 재시도 메커니즘 제공
+                *   Dead Letter Queue 구성 가능
+                *   대량 처리나 시간이 오래 걸리는 작업에 적합
+            *   구현 예시:
+                ```python
+                import boto3
+
+                # Lambda 클라이언트 생성
+                lambda_client = boto3.client('lambda')
+
+                # 비동기 호출
+                async_response = lambda_client.invoke(
+                    FunctionName='YourFunctionName',
+                    InvocationType='Event',
+                    Payload='{"key": "value"}'
+                )
+
+                # 동기 호출
+                sync_response = lambda_client.invoke(
+                    FunctionName='YourFunctionName',
+                    InvocationType='RequestResponse',
+                    Payload='{"key": "value"}'
+                )
+                ```
+            *   주의사항
+                *   InvokeAsync API는 더 이상 사용되지 않음
+                *   비동기 호출은 Invoke API + Event 타입 사용
+                *   오류 처리를 위한 DLQ 구성 권장
+                *   재시도 정책 설정 필요
     *   Kinesis Data Streams로 데이터 내보내기 가능
 
 *   **DynamoDB Streams 모니터링 및 로깅**
@@ -557,200 +629,108 @@
                 )
             ```
 
-*   **DynamoDB 샤딩 전략**
-    *   **샤딩이란?**
-        *   데이터를 여러 파티션에 분산하여 저장하는 기술
-        *   단일 파티션의 부하를 줄이고 전체 성능을 향상
-        *   데이터 접근을 고르게 분산하여 핫 파티션 방지
-        *   확장성과 가용성 향상을 위한 핵심 전략
-
-    *   **샤딩 패턴**
-        *   **랜덤 접두사/접미사**
-            ```python
-            import random
-
-            def create_item_with_random_shard(item_data):
-                # 1-10 사이의 랜덤 샤드 번호 생성
-                shard_id = random.randint(1, 10)
-                
-                table.put_item(
-                    Item={
-                        'PK': f"SHARD_{shard_id}#ITEM#{item_data['id']}",
-                        'SK': item_data['sort_key'],
-                        # ... 기타 속성들
-                    }
-                )
-            ```
-
-        *   **계산된 샤드 번호**
-            ```python
-            def create_item_with_calculated_shard(item_data):
-                # 항목 ID를 기반으로 일관된 샤드 번호 계산
-                shard_id = hash(item_data['id']) % 10 + 1
-                
-                return f"SHARD_{shard_id}#ITEM#{item_data['id']}"
-            ```
-
-        *   **타임스탬프 기반 샤딩**
-            ```python
-            from datetime import datetime
-
-            def create_item_with_time_shard(item_data):
-                # 현재 시간을 기준으로 샤드 키 생성
-                current_hour = datetime.utcnow().strftime('%Y%m%d%H')
-                
-                table.put_item(
-                    Item={
-                        'PK': f"TIME_{current_hour}#{item_data['id']}",
-                        'SK': item_data['sort_key'],
-                        # ... 기타 속성들
-                    }
-                )
-            ```
-
-    *   **샤딩 구현 예시**
-        *   **Write Sharding (쓰기 샤딩)**
-            ```python
-            class WriteShardingExample:
-                def __init__(self, table_name, shard_count=10):
-                    self.table = boto3.resource('dynamodb').Table(table_name)
-                    self.shard_count = shard_count
-
-                def write_item(self, user_id, data):
-                    # 사용자 ID를 기반으로 샤드 결정
-                    shard_id = hash(user_id) % self.shard_count
-                    
-                    self.table.put_item(
-                        Item={
-                            'PK': f"SHARD_{shard_id}#USER#{user_id}",
-                            'SK': data['timestamp'],
-                            'data': data['content']
-                        }
-                    )
-
-                def read_item(self, user_id, timestamp):
-                    # 동일한 해시 함수로 샤드 결정
-                    shard_id = hash(user_id) % self.shard_count
-                    
-                    return self.table.get_item(
-                        Key={
-                            'PK': f"SHARD_{shard_id}#USER#{user_id}",
-                            'SK': timestamp
-                        }
-                    )
-            ```
-
-        *   **Read Sharding (읽기 샤딩)**
-            ```python
-            class ReadShardingExample:
-                def __init__(self, table_name, shard_count=10):
-                    self.table = boto3.resource('dynamodb').Table(table_name)
-                    self.shard_count = shard_count
-
-                def write_to_all_shards(self, item_id, data):
-                    # 모든 샤드에 데이터 복제
-                    for shard_id in range(self.shard_count):
-                        self.table.put_item(
-                            Item={
-                                'PK': f"SHARD_{shard_id}#ITEM#{item_id}",
-                                'data': data
-                            }
-                        )
-
-                def read_from_random_shard(self, item_id):
-                    # 랜덤 샤드에서 읽기
-                    shard_id = random.randint(0, self.shard_count - 1)
-                    return self.table.get_item(
-                        Key={
-                            'PK': f"SHARD_{shard_id}#ITEM#{item_id}"
-                        }
-                    )
-            ```
-
-    *   **샤딩 사용 시 고려사항**
-        *   **장점**
-            *   트래픽 분산
-            *   핫 파티션 방지
-            *   처리량 향상
-            *   비용 효율성 증가
+*   **DynamoDB 캐싱 전략**
+    *   **캐싱 전략 유형**
+        *   **Lazy Loading (지연 로딩)**
+            *   특징:
+                *   캐시 미스가 발생할 때만 데이터를 캐시에 로드
+                *   필요한 데이터만 캐시에 저장
+                *   캐시의 데이터가 최신 상태가 아닐 수 있음
+            *   장점:
+                *   불필요한 데이터가 캐시되지 않음
+                *   캐시 미스 시에만 쓰기 발생
+            *   단점:
+                *   캐시 미스 시 지연 시간 증가
+                *   데이터가 오래된 상태일 수 있음
         
-        *   **주의사항**
-            *   데이터 일관성 관리 필요
-            *   복잡성 증가
-            *   쿼리 패턴 영향
-            *   샤드 수 결정의 중요성
+        *   **Write Through (연속 쓰기)**
+            *   특징:
+                *   데이터베이스에 쓸 때마다 캐시도 업데이트
+                *   캐시의 데이터가 항상 최신 상태 유지
+                *   데이터 일관성 보장
+            *   장점:
+                *   캐시가 항상 최신 상태
+                *   읽기 지연 시간 감소
+            *   단점:
+                *   쓰기 지연 시간 증가
+                *   사용되지 않는 데이터도 캐시에 저장
+                *   리소스 및 공간 낭비 가능성
 
-    *   **샤딩 모범 사례**
-        *   적절한 샤드 수 선택
-        *   일관된 해시 함수 사용
-        *   샤드 키 설계 시 확장성 고려
-        *   모니터링 및 재샤딩 전략 수립
-        *   백업 및 복구 계획 수립
-
-*   **낙관적 잠금(Optimistic Locking) 구현**
-    *   **개요**
-        *   동시성 제어를 위한 버전 기반 잠금 전략
-        *   데이터 일관성 보장 및 동시 수정 충돌 방지
-        *   글로벌 테이블과 함께 사용 시 주의 필요 (최종 작성자 우선 정책과 충돌)
-    
-    *   **구현 방법**
-        *   테이블 매핑 클래스에 버전 속성 추가
-        *   조건부 업데이트를 통한 버전 검증
-        *   충돌 발생 시 재시도 로직 구현
-        ```python
-        def update_with_optimistic_lock(table, item_id, new_data, expected_version):
-            try:
-                response = table.update_item(
-                    Key={'id': item_id},
-                    UpdateExpression='SET #data = :new_data, #version = :new_version',
-                    ConditionExpression='#version = :expected_version',
-                    ExpressionAttributeNames={
-                        '#data': 'data',
-                        '#version': 'version'
-                    },
-                    ExpressionAttributeValues={
-                        ':new_data': new_data,
-                        ':expected_version': expected_version,
-                        ':new_version': expected_version + 1
-                    }
+        *   **Write Through + TTL**
+            *   특징:
+                *   Write Through 전략에 TTL(Time To Live) 추가
+                *   일정 시간 후 캐시 데이터 자동 삭제
+                *   공간 효율성과 데이터 최신성 모두 확보
+            *   장점:
+                *   캐시 데이터 최신성 보장
+                *   미사용 데이터 자동 제거
+                *   리소스 효율적 사용
+            *   구현 예시:
+                ```python
+                # ElastiCache Redis 설정 예시
+                redis_client = redis.Redis(
+                    host='your-elasticache-endpoint',
+                    port=6379,
+                    decode_responses=True
                 )
-                return True
-            except ClientError as e:
-                if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                    return False  # 버전 불일치로 업데이트 실패
-                raise e
-        ```
 
-    *   **재시도 메커니즘**
-        *   지수 백오프 적용
-        *   최대 재시도 횟수 제한
-        *   사용자 친화적 에러 처리
-        ```python
-        def update_with_retry(table, item_id, new_data, max_retries=3):
-            retries = 0
-            while retries < max_retries:
-                # 현재 항목 조회
-                current_item = table.get_item(Key={'id': item_id})['Item']
-                current_version = current_item['version']
-                
-                # 업데이트 시도
-                if update_with_optimistic_lock(table, item_id, new_data, current_version):
-                    return True
-                
-                retries += 1
-                time.sleep((2 ** retries) * 0.1)  # 지수 백오프
-            
-            raise Exception("최대 재시도 횟수 초과")
-        ```
+                def write_through_with_ttl(key, value, ttl_seconds=3600):
+                    # DynamoDB에 데이터 쓰기
+                    dynamodb_table.put_item(
+                        Item={
+                            'id': key,
+                            'data': value
+                        }
+                    )
+                    
+                    # 캐시에 데이터 쓰기 (TTL 설정)
+                    redis_client.setex(
+                        name=key,
+                        time=ttl_seconds,
+                        value=json.dumps(value)
+                    )
 
-    *   **장점**
-        *   데이터 일관성 보장
-        *   동시 수정 충돌 방지
-        *   리소스 효율적 사용
-        *   구현 및 유지보수 용이
+                def read_data(key):
+                    # 캐시에서 먼저 조회
+                    cached_data = redis_client.get(key)
+                    if cached_data:
+                        return json.loads(cached_data)
+                    
+                    # 캐시 미스 시 DynamoDB에서 조회
+                    response = dynamodb_table.get_item(
+                        Key={'id': key}
+                    )
+                    if 'Item' in response:
+                        return response['Item']['data']
+                    return None
+                ```
+
+    *   **캐싱 전략 선택 기준**
+        *   **Lazy Loading 적합한 경우**:
+            *   데이터가 자주 변경되지 않는 경우
+            *   일부 오래된 데이터가 허용되는 경우
+            *   캐시 미스로 인한 지연이 허용되는 경우
+        
+        *   **Write Through 적합한 경우**:
+            *   데이터 일관성이 중요한 경우
+            *   읽기가 빈번한 경우
+            *   쓰기 지연이 허용되는 경우
+        
+        *   **Write Through + TTL 적합한 경우**:
+            *   데이터 최신성이 중요한 경우
+            *   캐시 공간 효율성이 중요한 경우
+            *   주기적인 데이터 갱신이 필요한 경우
+
+    *   **캐싱 모범 사례**
+        *   적절한 TTL 값 설정
+        *   캐시 크기 모니터링
+        *   장애 복구 전략 수립
+        *   캐시 무효화 정책 수립
+        *   성능 메트릭 모니터링
 
     *   **주의사항**
-        *   글로벌 테이블 사용 시 제한사항 존재
-        *   DynamoDBMapper 트랜잭션 작업과 호환성 없음
-        *   높은 동시성 환경에서 재시도 로직 튜닝 필요
-        *   버전 관리로 인한 저장 공간 오버헤드
+        *   캐시 데이터 정합성 관리
+        *   메모리 사용량 모니터링
+        *   네트워크 지연 고려
+        *   장애 상황 대비
+        *   비용 효율성 분석
