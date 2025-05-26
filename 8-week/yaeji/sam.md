@@ -19,6 +19,7 @@
 *   **`AWS::Serverless::SimpleTable`**: DynamoDB 테이블을 간편하게 정의합니다.
     *   주요 속성: `PrimaryKey` (`Name`, `Type`), `ProvisionedThroughput`.
 *   **`Globals` 섹션**: 여러 `AWS::Serverless::Function`, `AWS::Serverless::Api`, `AWS::Serverless::SimpleTable` 리소스에 공통적으로 적용될 속성을 정의하여 중복을 줄일 수 있습니다.
+*   **`AWS::Serverless::Application`**: 중첩 애플리케이션을 정의할 때 사용합니다.
 
 ## 3. SAM CLI 주요 명령어
 
@@ -148,7 +149,7 @@ Resources:
       # ... (Handler, Runtime, CodeUri 등)
       AutoPublishAlias: live # '''live'''라는 이름의 별칭을 자동 생성 및 업데이트
       DeploymentPreference:
-        Type: Canary10Percent10Minutes # 또는 Linear10PercentEvery1Minute 등
+        Type: Canary10Percent5Minutes # 또는 Linear10PercentEvery1Minute 등
                                       # 10분 동안 10% 트래픽을 새 버전으로, 이후 100% 전환
         Alarms: # 배포 중 모니터링할 CloudWatch 경보 목록 (롤백 트리거)
           - !Ref MyCriticalAlarm
@@ -308,3 +309,148 @@ Resources:
 2. **자동 변환**: CloudFormation이 SAM 템플릿을 자동으로 변환하여 처리합니다.
 3. **재사용성**: 여러 리전에서 동일한 템플릿을 재사용할 수 있습니다.
 4. **유지보수**: 서버리스 애플리케이션의 인프라를 코드로 관리할 수 있습니다.
+
+✅ **정답: Transform**
+🔍 **이유:**
+AWS SAM은 CloudFormation의 확장 기능입니다. CloudFormation 템플릿에서 **SAM 구문(AWS::Serverless::Function, AWS::Serverless::Api 등)**을 사용하려면,  
+반드시 Transform 섹션에서 다음과 같이 매크로를 선언해야 합니다:
+
+```yaml
+Transform: AWS::Serverless-2016-10-31
+```
+
+이 선언이 있어야 CloudFormation이 SAM 템플릿을 인식하고, SAM 구문을 표준 CloudFormation 리소스로 **자동 변환**하여 처리할 수 있습니다.  
+즉, Transform 섹션이 없다면 SAM 리소스 타입(`AWS::Serverless::Function` 등)을 알 수 없어 **배포가 실패**합니다.
+
+> **실무 Tip:**  
+> Transform 섹션이 누락된 경우, "Unrecognized resource types: [AWS::Serverless::Function]"와 같은 오류가 발생합니다.  
+> SAM 템플릿을 작성할 때는 항상 파일 상단에 Transform 선언이 있는지 확인하세요.
+
+---
+
+❌ **오답 해설**
+
+- **Parameters:**  
+  템플릿에 외부 값을 전달할 때 사용하는 섹션입니다.  
+  예를 들어, 환경별 변수나 사용자 입력값을 받을 때 활용하지만,  
+  **SAM 활성화나 버전 지정과는 무관**합니다.
+
+- **Mappings:**  
+  조건에 따라 값을 선택하는 lookup 테이블 역할을 합니다.  
+  예를 들어, 리전별 AMI ID를 매핑할 때 사용하지만,  
+  **SAM 구문 활성화와는 관련이 없습니다.**
+
+- **AWSTemplateFormatVersion:**  
+  템플릿의 형식 버전을 명시하는 선언입니다.  
+  CloudFormation 템플릿의 문법 버전을 나타낼 뿐,  
+  **SAM 버전이나 매크로 활성화와는 아무 관련이 없습니다.**
+
+---
+
+### 💡 **정리**
+- **Transform** 섹션이 있어야만 SAM 구문이 CloudFormation에서 동작합니다.
+- 실무에서 가장 많이 하는 실수는 Transform 선언을 빼먹는 것!
+- Parameters, Mappings, AWSTemplateFormatVersion은 각각 별도의 역할을 하며, SAM 활성화와는 직접적인 관련이 없습니다.
+
+> **참고:**  
+> 공식 문서: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy.html#sam-specification-template-anatomy-transform
+
+### AWS::Serverless::Application 리소스 추가 설명
+
+#### 1. 개념 및 목적
+- **AWS::Serverless::Application** 리소스는 SAM 템플릿에서 **중첩 애플리케이션**(Nested Application)을 정의할 때 사용합니다.
+- 중첩 애플리케이션이란, 별도의 SAM 애플리케이션(예: Serverless Application Repository 또는 S3에 저장된 패키지)을 상위 SAM 템플릿에 포함시켜, 재사용성과 모듈화를 극대화하는 방식입니다.
+
+#### 2. 주요 속성
+- `Location`: 중첩할 애플리케이션의 위치(예: S3 URL, Serverless Application Repository ARN 등)
+- `Parameters`: 중첩 애플리케이션에 전달할 파라미터(선택)
+
+#### 3. 사용 예시
+```yaml
+Resources:
+  MyNestedApp:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: arn:aws:serverlessrepo:ap-northeast-2:123456789012:applications/my-shared-component
+      Parameters:
+        StageName: prod
+```
+- 위 예시는 Serverless Application Repository에 등록된 공통 컴포넌트(예: 인증, 로깅 등)를 내 애플리케이션에 포함시키는 방법입니다.
+
+#### 4. 장점 및 활용 시나리오
+- **재사용성**: 여러 프로젝트에서 공통 기능(예: 인증, 모니터링, 알림 등)을 별도 애플리케이션으로 만들어 손쉽게 재사용할 수 있습니다.
+- **모듈화**: 대규모 서버리스 아키텍처를 작은 단위로 분리하여 관리할 수 있습니다.
+- **유지보수성**: 공통 모듈을 한 곳에서 업데이트하면, 이를 사용하는 모든 애플리케이션에 쉽게 반영할 수 있습니다.
+- **Serverless Application Repository**: AWS 공식 및 커뮤니티가 제공하는 다양한 서버리스 솔루션을 손쉽게 가져와 사용할 수 있습니다.
+
+#### 5. 실무 TIP 및 주의사항
+- 중첩 애플리케이션의 파라미터는 상위 템플릿에서 오버라이드할 수 있습니다.
+- 중첩 애플리케이션의 리소스 이름 충돌에 주의해야 하며, 논리적 ID가 겹치지 않도록 설계해야 합니다.
+- 중첩 애플리케이션의 버전 관리(예: 특정 버전 ARN 사용)를 통해 안정적인 배포가 가능합니다.
+- Serverless Application Repository에서 검증된 애플리케이션을 활용하면, 보안 및 품질 측면에서 이점이 있습니다.
+
+#### 6. 공식 문서
+- [AWS::Serverless::Application 공식 문서](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-application.html)
+- [Serverless Application Repository](https://aws.amazon.com/serverless/serverlessrepo/)
+
+---
+
+**정리**
+- 중첩 애플리케이션을 임베드하려면 반드시 `AWS::Serverless::Application` 리소스 유형을 사용해야 합니다.
+- 이 리소스를 활용하면, 서버리스 아키텍처의 재사용성, 모듈화, 유지보수성을 크게 높일 수 있습니다.
+
+### Lambda 함수 배포 전략(Deployment Preference) 비교 및 실무 설명
+
+#### 1. 주요 배포 구성 옵션 설명
+
+- **CodeDeployDefault.HalfAtATime**
+  - 전체 트래픽의 50%를 새 버전으로 전환, 나머지 50%는 이전 버전에 남김.
+  - 1차 전환 후, 문제가 없으면 나머지 50%도 새 버전으로 전환(총 2단계).
+  - 빠르지만, 한 번에 절반의 트래픽이 이동하므로 위험도가 높을 수 있음.
+
+- **CodeDeployDefault.LambdaLinear10PercentEvery1Minute**
+  - 1분마다 10%씩 트래픽을 새 버전으로 점진적으로 전환.
+  - 10분 후 100% 전환 완료.
+  - 점진적이지만, "최대한 빨리"라는 요구에는 다소 느릴 수 있음.
+
+- **CodeDeployDefault.LambdaCanary10Percent5Minutes**
+  - 처음 10% 트래픽만 새 버전으로 전환, 5분간 모니터링 후 문제가 없으면 나머지 90%를 한 번에 전환.
+  - 빠른 전환과 최소한의 위험 분산을 동시에 달성.
+  - 실무에서 "빠른 점진적 전환"이 필요할 때 가장 많이 사용.
+
+- **CodeDeployDefault.LambdaLinear10PercentEvery2Minutes**
+  - 2분마다 10%씩 트래픽을 새 버전으로 점진적으로 전환.
+  - 20분 후 100% 전환 완료.
+  - 가장 안전하지만, 전환 속도가 가장 느림.
+
+#### 2. 실무 TIP 및 주의사항
+
+- **카나리 배포(Canary)**: 소량의 트래픽만 새 버전에 보내어 문제 발생 시 전체 장애를 방지. 일정 시간 후 이상 없으면 전체 전환.
+- **리니어 배포(Linear)**: 일정 비율씩 점진적으로 트래픽을 전환. 안정성은 높지만, 전환 속도가 느릴 수 있음.
+- **AllAtOnce/HalfAtATime**: 빠르지만, 장애 발생 시 영향 범위가 큼.
+- **배포 전략 선택 기준**: 서비스의 중요도, 장애 허용 범위, 배포 속도 요구사항에 따라 선택.
+- **CloudWatch Alarm 연동**: 배포 중 이상 징후 감지 시 자동 롤백 설정 권장.
+
+#### 4. SAM 템플릿 예시
+```yaml
+Resources:
+  MyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      # ... (Handler, Runtime 등)
+      AutoPublishAlias: live
+      DeploymentPreference:
+        Type: Canary10Percent5Minutes
+        Alarms:
+          - !Ref MyAlarm
+```
+
+#### 5. 공식 문서
+- [Lambda 배포 구성 공식 문서](https://docs.aws.amazon.com/ko_kr/lambda/latest/dg/configuration-versions.html#configuration-versions-traffic-shifting)
+- [AWS SAM DeploymentPreference](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-function-deploymentpreference.html)
+
+---
+
+**정리**
+- "최대한 빨리, 하지만 한꺼번에 전환하지 않는" 배포에는 **CodeDeployDefault.LambdaCanary10Percent5Minutes**가 가장 적합합니다.
+- 실무에서는 Canary, Linear, AllAtOnce 등 다양한 전략을 서비스 특성에 맞게 선택해야 하며, CloudWatch Alarm과 연동하여 안전한 배포를 권장합니다.

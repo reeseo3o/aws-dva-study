@@ -70,7 +70,7 @@ VPC는 Virtual Private Cloud로 AWS 클라우드에 있는 사설 네트워크�
 
 ## VPC Flow Logs
 
-- **VPC Flow Logs는 VPC 내 인터페이스로 가는 모든 IP 트래픽 정보를 수집합니다**
+- **VPC Flow Logs는 VPC, 서브넷, 네트워크 인터페이스(ENI)에서 송수신되는 모든 IP 트래픽 정보를 캡처하는 기능입니다.**
 - 다음 수준에서 Flow Logs를 생성할 수 있습니다.
   - VPC 수준
   - 서브넷 수준
@@ -79,6 +79,26 @@ VPC는 Virtual Private Cloud로 AWS 클라우드에 있는 사설 네트워크�
 - 허용 및 거부된 모든 트래픽에 대한 정보 제공
 - **Elastic Load Balancer, ElastiCache, RDS, Aurora 등 AWS 관리 서비스도 VPC Flow Logs에 표시됩니다**
 - 로그 데이터는 Amazon S3, CloudWatch Logs, Kinesis Data Firehose로 전송 가능
+
+### VPC Flow Logs 상세 설명
+
+- **VPC Flow Logs는 VPC, 서브넷, 네트워크 인터페이스(ENI)에서 송수신되는 모든 IP 트래픽 정보를 캡처하는 기능입니다.**
+- **수집되는 정보에는 다음이 포함됩니다:**
+  - 소스 IP 주소
+  - 목적지 IP 주소
+  - 소스 포트
+  - 목적지 포트
+  - 프로토콜
+  - 패킷 수
+  - 바이트 수
+  - 트래픽의 수락(ACCEPT) 또는 거부(REJECT) 여부
+- **수집된 로그는 Amazon CloudWatch Logs 또는 Amazon S3에 저장할 수 있습니다.**
+- **CloudWatch Logs 또는 S3에 저장된 로그는 규제 준수, 보안 분석, 네트워크 트래픽 모니터링, 문제 해결 등에 활용할 수 있습니다.**
+- **EC2 인스턴스가 오토스케일링 그룹(ASG) 내에 있더라도, 네트워크 인터페이스(ENI) 단위로 자동 추적 및 로그 수집이 가능합니다.**
+- **VPC Flow Logs는 네트워크 트래픽의 흐름을 분석하여, 보안 그룹이나 NACL 규칙으로 인해 트래픽이 차단되는 원인을 진단하는 데 유용합니다.**
+- **CloudTrail은 API 호출 추적용 서비스로, VPC의 네트워크 트래픽 자체를 캡처하지는 않습니다.**
+- **AWS Inspector는 보안 평가 서비스로, 네트워크 트래픽 캡처 기능은 제공하지 않습니다.**
+- **VPC Flow Logs를 활성화하면, 네트워크 인터페이스에서 오가는 모든 IP 트래픽 정보를 손쉽게 캡처할 수 있습니다.**
 
 ## VPC 연결 옵션
 

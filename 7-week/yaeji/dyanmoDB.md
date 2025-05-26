@@ -54,6 +54,28 @@
             *   전체 테이블 스캔 (비효율적)
             *   병렬 스캔 가능
             *   필터 표현식으로 결과 제한 가능
+        *   **투영 표현식 (Projection Expression)**
+            *   데이터 읽기 작업(`GetItem`, `Query`, `Scan`)에서 특정 속성만 선택적으로 반환
+            *   기본적으로는 모든 속성을 반환하지만, 투영 표현식으로 필요한 속성만 지정 가능
+            *   성능 최적화와 네트워크 비용 절감에 유용
+            *   사용 예시:
+                ```bash
+                # price와 course_title만 조회
+                aws dynamodb get-item \
+                    --table-name Courses \
+                    --key '{"course_id": {"S": "CS101"}}' \
+                    --projection-expression "price, course_title"
+
+                # 중첩된 속성 접근
+                aws dynamodb get-item \
+                    --table-name Products \
+                    --key '{"Id": {"N": "1"}}' \
+                    --projection-expression "Description, RelatedItems[0], ProductReviews.FiveStar"
+                ```
+            *   주의사항:
+                *   속성 이름이 예약어이거나 특수문자를 포함할 경우 표현식 속성 이름(#) 사용 필요
+                *   여러 속성은 쉼표로 구분
+                *   List나 Map의 중첩된 속성도 접근 가능
     *   **일괄 작업**
         *   `BatchWriteItem`: 최대 25개 Put/Delete 작업
         *   `BatchGetItem`: 
@@ -162,11 +184,17 @@
                 *   실시간 처리가 필요한 경우 적합
             *   비동기(Asynchronous) 호출
                 *   `Event` 타입으로 호출
-                *   즉시 응답 반환 (202 상태 코드)
-                *   백그라운드에서 함수 실행
+                *   즉시 응답 반환 (202 상태 코드, "요청 수락됨" 메시지)
+                *   호출자는 Lambda 함수 실행 완료를 기다릴 필요 없이 바로 응답을 받음
+                *   Lambda 함수는 백그라운드에서 실행됨
+                *   예시: 사용자가 이미지를 S3에 업로드하면, Lambda를 Event 타입으로 호출하여 이미지 처리 작업을 백그라운드에서 수행. 사용자는 업로드 즉시 "요청 수락됨" 메시지를 받고, Lambda는 이후에 S3 이미지를 처리함.
                 *   자동 재시도 메커니즘 제공
                 *   Dead Letter Queue 구성 가능
                 *   대량 처리나 시간이 오래 걸리는 작업에 적합
+            *   DryRun 호출
+                *   실제로 함수가 실행되지는 않음
+                *   호출 권한(Invoke 권한)만 검증
+                *   권한 테스트 및 배포 전 점검에 활용
             *   구현 예시:
                 ```python
                 import boto3
@@ -174,17 +202,24 @@
                 # Lambda 클라이언트 생성
                 lambda_client = boto3.client('lambda')
 
-                # 비동기 호출
+                # 비동기 호출 (Event)
                 async_response = lambda_client.invoke(
                     FunctionName='YourFunctionName',
                     InvocationType='Event',
                     Payload='{"key": "value"}'
                 )
 
-                # 동기 호출
+                # 동기 호출 (RequestResponse)
                 sync_response = lambda_client.invoke(
                     FunctionName='YourFunctionName',
                     InvocationType='RequestResponse',
+                    Payload='{"key": "value"}'
+                )
+
+                # DryRun 호출 (권한만 확인)
+                dryrun_response = lambda_client.invoke(
+                    FunctionName='YourFunctionName',
+                    InvocationType='DryRun',
                     Payload='{"key": "value"}'
                 )
                 ```

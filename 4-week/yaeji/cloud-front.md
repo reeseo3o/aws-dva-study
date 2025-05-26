@@ -370,6 +370,87 @@ D --> E[S3 / OpenSearch / 기타 대상]
 
 이 기능을 활용하면 CloudFront 배포 상태를 실시간으로 가시화하고 자동화된 대응 시스템을 구축할 수 있습니다.
 
+## CloudFront를 사용한 지역별 리디렉션 구현
+### 개요
+CloudFront를 사용하여 사용자의 지리적 위치에 따라 다른 URL로 리디렉션하는 기능을 구현할 수 있습니다. 이는 CloudFront 함수를 사용하여 효율적으로 구현할 수 있습니다.
+
+### CloudFront 함수를 사용한 구현 방법
+#### 장점
+| 항목 | 설명 |
+|:---:|:---:|
+| 지연 시간 | 1밀리초 미만의 매우 낮은 지연 시간 |
+| 확장성 | 초당 수백만 건의 요청 처리 가능 |
+| 비용 | 백만 건당 $0.10의 저렴한 비용 |
+| 구현 복잡도 | 간단한 JavaScript 코드로 구현 가능 |
+
+#### 구현 예시 코드
+```javascript
+function handler(event) {
+    var request = event.request;
+    var headers = request.headers;
+    
+    // CloudFront-Viewer-Country 헤더에서 국가 코드 추출
+    var countryCode = headers['cloudfront-viewer-country'].value;
+    
+    // 국가별 리디렉션 URL 매핑
+    var redirectMap = {
+        'GB': '/uk/',
+        'PH': '/ph/',
+        'US': '/us/',
+        // 기타 국가 추가 가능
+    };
+    
+    // 해당 국가의 리디렉션 URL이 있는 경우
+    if (redirectMap[countryCode]) {
+        var response = {
+            statusCode: 302,
+            statusDescription: 'Found',
+            headers: {
+                'location': { value: `https://example.com${redirectMap[countryCode]}` }
+            }
+        };
+        return response;
+    }
+    
+    // 매핑되지 않은 국가는 기본 URL로 처리
+    return request;
+}
+```
+
+### 캐시 최적화 전략
+#### 캐시 키 구성
+| 구성 요소 | 포함 여부 | 설명 |
+|:---:|:---:|:---:|
+| CloudFront-Viewer-Country | ✔️ | 국가별 캐싱을 위해 필수 |
+| Host 헤더 | ✔️ | 도메인 구분을 위해 필요 |
+| URL 쿼리 문자열 | ❌ | 필요한 경우만 포함 |
+| 쿠키 | ❌ | 필요한 경우만 포함 |
+
+#### 캐시 TTL 설정
+| 콘텐츠 유형 | TTL 설정 | 설명 |
+|:---:|:---:|:---:|
+| 정적 리디렉션 규칙 | 24시간 | 자주 변경되지 않는 경우 |
+| 동적 리디렉션 규칙 | 1시간 | 자주 변경되는 경우 |
+| 에러 응답 | 5분 | 오리진 장애 대비 |
+
+### 모니터링 및 최적화
+#### 주요 모니터링 지표
+1. 캐시 적중률 (Cache Hit Ratio)
+2. 오리진 지연 시간 (Origin Latency)
+3. 오류율 (Error Rate)
+4. 총 요청 수 (Total Requests)
+
+#### 비용 최적화 전략
+1. 캐시 키 최소화로 캐시 효율성 향상
+2. 적절한 TTL 설정으로 오리진 요청 최소화
+3. 에러 캐싱을 통한 오리진 부하 감소
+
+### 구현 시 주의사항
+1. CloudFront 함수는 경량화되어 있어 복잡한 연산 불가
+2. 외부 API 호출이나 파일 시스템 접근 불가
+3. 최대 실행 시간 1ms 제한
+4. JavaScript ES5.1 문법만 지원
+
 
 
 

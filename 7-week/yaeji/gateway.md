@@ -34,47 +34,60 @@ API 게이트웨이를 배포하는 방식으로, 클라이언트가 API에 액�
 
 ### 2.2. 통합 유형
 API 게이트웨이가 백엔드와 통신하는 방식입니다.
-- **Lambda 함수 통합**:
-    - 가장 일반적인 서버리스 애플리케이션 패턴.
-    - **Lambda 프록시 통합 (Lambda Proxy Integration)**:
-        - API Gateway가 클라이언트의 전체 HTTP 요청을 Lambda 함수에 그대로 전달.
-        - Lambda 함수는 특정 형식의 JSON 응답을 반환해야 함.
-        - 매핑 템플릿이나 변환 없이 자동으로 처리됨.
-        - **장점**:
-            - 설정이 매우 간단함.
-            - API Gateway 설정 변경 없이 Lambda 함수에서 모든 로직을 처리할 수 있음.
-        - **단점**:
-            - 요청/응답 형식을 API Gateway 수준에서 변경할 수 없음.
-            - Lambda 함수가 API Gateway의 응답 형식을 정확히 따라y야 함.
-    - **Lambda 사용자 정의 통합 (Lambda Custom Integration)**:
-        - API Gateway에서 매핑 템플릿을 사용하여 요청과 응답을 변환할 수 있음.
-        - 입력과 출력 형식을 완벽하게 제어할 수 있음.
-        - VTL(Velocity Template Language)을 사용하여 매핑 템플릿을 작성.
-        - **장점**:
-            - 요청/응답 형식을 완벽하게 제어할 수 있음.
-            - Lambda 함수는 API Gateway의 형식에 구애받지 않고 자유롭게 구현할 수 있음.
-        - **단점**:
-            - 설정이 복잡하고 VTL 문법을 이해해야 함.
-            - 매핑 템플릿 관리에 추가적인 노력이 필요함.
-    - **통합 방식 선택 가이드**:
-        - Lambda 프록시 통합 선택 시기:
-            - 빠른 API 프로토타이핑이 필요할 때
-            - 단순한 REST API를 구현할 때
-            - Lambda 함수에서 모든 로직을 처리하고 싶을 때
-        - Lambda 사용자 정의 통합 선택 시기:
-            - 요청/응답 형식의 세밀한 제어가 필요할 때
-            - 기존 백엔드 시스템과의 호환성이 중요할 때
-            - API Gateway 수준에서 요청/응답 변환이 필요할 때
-- **HTTP 통합**:
-    - 온프레미스 또는 클라우드의 HTTP 엔드포인트(예: Application Load Balancer)를 백엔드로 사용.
-    - `HTTP_PROXY` (HTTP 프록시 통합): 요청을 백엔드로 직접 전달.
-    - HTTP 직접 통합: 매핑 템플릿 사용 가능.
-- **AWS 서비스 통합**:
-    - API 게이트웨이를 통해 다른 AWS 서비스(예: Amazon SQS, Step Functions, Kinesis Data Streams) 직접 호출.
-    - 인증 추가, 공개적 배포, 속도 제한 등의 목적으로 사용.
-- **MOCK 통합**:
-    - 실제 백엔드 호출 없이 API 게이트웨이가 응답 생성.
-    - API 개발 및 테스트, CORS 사전 요청(preflight) 처리 등에 유용.
+
+#### 통합 유형별 비교
+
+| 통합 유형         | type 값      | 주요 사용처/특징                                                                 | 데이터 매핑(VTL) | 예시 시나리오                                 |
+|------------------|--------------|----------------------------------------------------------------------------------|------------------|-----------------------------------------------|
+| Lambda 프록시     | AWS_PROXY    | Lambda 함수에 HTTP 요청 전체를 그대로 전달, 응답도 특정 포맷 필요                  | 불가             | 서버리스 REST API, 빠른 프로토타입             |
+| Lambda 사용자정의 | AWS          | Lambda 함수에 요청/응답을 매핑 템플릿으로 변환 후 전달, 응답도 변환 가능           | 가능             | 요청/응답 포맷 세밀 제어, 레거시 시스템 연동   |
+| HTTP 프록시       | HTTP_PROXY   | HTTP 백엔드에 요청을 그대로 전달, 응답도 그대로 반환. 매핑 불가                   | 불가             | 단순 프록시, API Gateway에서 변환 불필요        |
+| HTTP 사용자정의   | HTTP         | HTTP 백엔드에 요청/응답을 매핑 템플릿으로 변환 후 전달, 응답도 변환 가능           | 가능             | 외부 REST API와 연동, 포맷 변환 필요           |
+| MOCK             | MOCK         | 실제 백엔드 없이 API Gateway가 응답 생성                                          | 가능             | 개발/테스트, CORS Preflight                   |
+| AWS 서비스       | AWS          | SQS, Kinesis 등 AWS 서비스 직접 호출                                              | 가능             | AWS 서비스 오케스트레이션                     |
+
+#### 주요 차이점 및 선택 가이드
+
+- **프록시 통합(HTTP_PROXY, AWS_PROXY)**  
+  - 요청/응답을 변환하지 않고 그대로 백엔드에 전달합니다.  
+  - 설정이 매우 간단하며, API Gateway에서 데이터 매핑이 필요 없는 경우 적합합니다.  
+  - **HTTP_PROXY**는 HTTP 엔드포인트(예: ALB, EC2 등)에, **AWS_PROXY**는 Lambda 함수에 사용합니다.
+  - 매핑 템플릿(VTL) 사용 불가 → 요청/응답 포맷을 바꿀 수 없습니다.
+
+- **사용자 정의 통합(HTTP, AWS)**  
+  - 매핑 템플릿을 사용해 요청/응답을 자유롭게 변환할 수 있습니다.  
+  - 복잡한 데이터 변환, 레거시 시스템 연동, 포맷 변환이 필요한 경우 적합합니다.
+  - 설정이 복잡하지만, 유연성이 높습니다.
+
+- **MOCK 통합**  
+  - 백엔드 없이 API Gateway가 직접 응답을 생성합니다.
+  - 개발, 테스트, CORS Preflight 등에 유용합니다.
+
+#### 예시 시나리오
+
+- **HTTP 프록시 통합(HTTP_PROXY)**  
+  - 기존에 잘 정의된 REST API 서버가 있고, API Gateway에서 별도의 데이터 변환 없이 그대로 프록시만 하고 싶을 때 사용합니다.
+  - 예: API Gateway → ALB → EC2 REST API
+
+- **HTTP 사용자 정의 통합(HTTP)**  
+  - 외부 시스템과 연동 시, 요청/응답 포맷을 맞추기 위해 데이터 변환이 필요할 때 사용합니다.
+  - 예: API Gateway에서 JSON 요청을 받아 XML로 변환 후 백엔드로 전달
+
+- **Lambda 프록시 통합(AWS_PROXY)**  
+  - 모든 비즈니스 로직을 Lambda에서 처리하고, API Gateway에서는 단순히 요청을 전달만 할 때 사용합니다.
+
+- **Lambda 사용자 정의 통합(AWS)**  
+  - 요청/응답 포맷을 세밀하게 제어해야 하거나, Lambda 함수가 API Gateway의 표준 포맷을 따르지 않을 때 사용합니다.
+
+---
+
+이처럼, **프록시 통합**은 데이터 매핑이 필요 없는 단순 프록시 시나리오에 적합하며, **사용자 정의 통합**은 요청/응답 변환이 필요한 복잡한 시나리오에 적합합니다.  
+시나리오에 따라 적절한 통합 유형을 선택해야 하며,  
+- **HTTP**: 데이터 매핑이 필요한 HTTP 백엔드 연동  
+- **HTTP_PROXY**: 데이터 매핑이 필요 없는 단순 프록시  
+- **AWS**: 데이터 매핑이 필요한 Lambda 또는 AWS 서비스 연동  
+- **AWS_PROXY**: 데이터 매핑이 필요 없는 Lambda 프록시  
+로 구분하여 사용하면 됩니다.
 
 ## 3. API 배포 및 관리
 
@@ -145,10 +158,10 @@ API 게이트웨이가 백엔드와 통신하는 방식입니다.
             - CloudWatch Logs를 통한 Lambda Authorizer 로깅
             - CloudWatch Metrics를 통한 성능 모니터링
             - X-Ray를 통한 상세한 트레이싱 가능
-        - **비용 고려사항**:
-            - Lambda Authorizer 호출당 비용 발생
-            - 캐싱을 통한 비용 최적화 가능
-            - 인증 실패한 요청에도 Lambda 비용 발생
+            - **비용 고려사항**:
+                - Lambda Authorizer 호출당 비용 발생
+                - 캐싱을 통한 비용 최적화 가능
+                - 인증 실패한 요청에도 Lambda 비용 발생
 - **리소스 정책 (Resource Policies)**:
     - API 게이트웨이 자체에 연결되는 JSON 정책.
     - 교차 계정 액세스 허용, 특정 IP 주소 범위 허용/차단, 특정 VPC 엔드포인트에서의 호출만 허용 등의 접근 제어.
@@ -158,6 +171,47 @@ API 게이트웨이가 백엔드와 통신하는 방식입니다.
     - Edge-Optimized 엔드포인트: `us-east-1` 리전의 인증서 필요.
     - Regional 엔드포인트: API 게이트웨이와 동일 리전의 인증서 필요.
 - Route 53을 사용하여 사용자 지정 도메인을 API 게이트웨이 엔드포인트에 매핑 (CNAME 또는 A-Alias 레코드).
+
+### 4.3. IAM 인증과 리소스 정책 결합 (실전 예시)
+
+> **실전 TIP: AWS_IAM 인증 + 리소스 정책**
+>
+> - **API Gateway의 메서드 권한 부여 유형(Method Authorization Type)으로 `AWS_IAM`을 사용하면, IAM 사용자 또는 IAM 역할과 같은 IAM 자격 증명을 통해서만 API에 액세스할 수 있습니다.**
+> - 추가로, **지정된 IAM 역할에 `execute-api:Invoke` 작업을 호출할 수 있는 권한을 부여하는 리소스 정책(Resource Policy)을 API에 연결**하면, 해당 역할만 API를 호출할 수 있고, 다른 IAM 사용자/역할의 접근은 거부할 수 있습니다.
+>
+> **예시 리소스 정책:**
+> ```json
+> {
+>   "Version": "2012-10-17",
+>   "Statement": [
+>     {
+>       "Effect": "Allow",
+>       "Principal": {
+>         "AWS": [
+>           "arn:aws:iam::account-id:role/Analyst"
+>         ]
+>       },
+>       "Action": "execute-api:Invoke",
+>       "Resource": [
+>         "execute-api:/stage/GET/reports"
+>       ]
+>     }
+>   ]
+> }
+> ```
+> - 위 정책은 `Analyst` 역할만 특정 API 리소스에 접근할 수 있도록 허용합니다.
+> - 이처럼 **메서드 인증(AWS_IAM)과 리소스 정책을 결합**하면, API에 대한 보안 계층이 더욱 강화됩니다.
+
+#### ❌ 오답 해설
+
+- **API 키를 생성하고 IAM 역할에 GetAPIKeys 권한을 부여**  
+  → API 키는 신뢰할 수 있는 호출자를 식별하는 용도일 뿐, IAM 역할에 권한을 부여하는 방식이 아닙니다.  
+- **Lambda Authorizer(람다 권한 부여자) 사용**  
+  → Lambda Authorizer는 주로 OAuth, SAML 등 토큰 기반 사용자 지정 인증에 적합하며, IAM 역할 기반 인증에는 적합하지 않습니다. 또한 Lambda 함수에서 context 객체로 IAM 신원을 직접 검증하는 것은 불가능합니다.
+- **Cognito User Pool Authorizer 사용**  
+  → Cognito는 주로 앱 사용자 인증에 사용되며, IAM 역할 기반 인증 시에는 필요하지 않습니다. 분석가(Analyst) 역할이 Cognito 토큰을 받을 필요가 없습니다.
+
+---
 
 ## 5. 요청 및 응답 처리
 

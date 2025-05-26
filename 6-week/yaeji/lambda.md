@@ -943,3 +943,63 @@ AWS Lambda 함수를 사용할 때의 모범 사례는 다음과 같습니다.
 – 실행 컨텍스트 재사용을 활용하여 함수의 성능을 향상시키세요.
 
 – AWS Lambda 환경 변수를 사용하여 함수에 운영 매개변수를 전달합니다. 
+
+## Lambda 함수 생성 시 InvalidParameterValueException 원인 및 실무 팁
+
+AWS CLI를 사용해 Lambda 함수를 생성할 때 `InvalidParameterValueException` 오류가 발생하는 가장 흔한 원인은 **Lambda가 맡을 수 없는 IAM 역할(즉, 신뢰 정책이 올바르지 않은 역할)을 제공한 경우**입니다.
+
+### 주요 원인: Lambda가 맡을 수 없는 IAM 역할
+- Lambda 함수 생성(CreateFunction) 시 `--role` 파라미터로 IAM 역할(ARN)을 지정해야 합니다.
+- 이 역할의 **신뢰 정책(Trust Policy)**에 반드시 `"Service": "lambda.amazonaws.com"`이 포함되어 있어야 합니다.
+- 만약 신뢰 정책이 잘못되어 있거나, 역할이 Lambda에서 사용할 수 없도록 설정되어 있다면, Lambda는 해당 역할을 맡을 수 없으므로 `InvalidParameterValueException`이 발생합니다.
+
+#### 예시: 올바른 신뢰 정책(Trust Policy)
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+#### 잘못된 신뢰 정책 예시
+- `"Service": "ec2.amazonaws.com"`만 있거나, `"lambda.amazonaws.com"`이 누락된 경우
+
+### 기타 원인
+- 역할 ARN 오타, 존재하지 않는 역할 ARN
+- Lambda 함수 코드 S3 버킷/오브젝트 경로 오류
+- 런타임(runtime) 파라미터 오타 등
+
+---
+
+### 다른 오류와의 차이점
+
+| 오류 유형 | 발생 상황 | 예시 메시지 |
+|-----------|-----------|-------------|
+| **InvalidParameterValueException** | 파라미터 값이 유효하지 않음 (주로 IAM 역할 문제) | "The role defined for the function cannot be assumed by Lambda." |
+| **ResourceConflictException** | 동일 이름의 Lambda 함수가 이미 존재 | "Function already exist: my-function" |
+| **CodeStorageExceededException** | 계정의 Lambda 코드 저장 한도 초과 | "You have exceeded your maximum total code size per account." |
+| **ServiceException/InternalFailure** | AWS Lambda 서비스 내부 오류 | "An internal error has occurred." |
+
+---
+
+### 실무 체크리스트
+
+- Lambda용 IAM 역할의 신뢰 정책에 `"Service": "lambda.amazonaws.com"`이 포함되어 있는지 확인
+- 역할 ARN이 정확한지, 오타가 없는지 확인
+- 역할에 Lambda 실행에 필요한 최소 권한(예: CloudWatch Logs, S3 등)이 부여되어 있는지 확인
+- Lambda 함수 이름이 중복되지 않는지 확인
+- 코드 크기 및 계정 한도 초과 여부 확인
+
+#### 참고 문서
+- [Lambda 실행 역할 공식 문서](https://docs.aws.amazon.com/ko_kr/lambda/latest/dg/lambda-intro-execution-role.html)
+- [Lambda CreateFunction 오류 코드](https://docs.aws.amazon.com/lambda/latest/dg/API_CreateFunction.html#API_CreateFunction_Errors)
+
+---
