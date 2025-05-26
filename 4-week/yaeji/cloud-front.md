@@ -451,6 +451,55 @@ function handler(event) {
 3. 최대 실행 시간 1ms 제한
 4. JavaScript ES5.1 문법만 지원
 
+### CloudFront에서 서명된 URL/쿠키 및 Referrer 검증을 통한 보안·비용 최적화
+
+#### 1. 서명된 URL/쿠키의 원리와 장점
+- **서명된 URL/쿠키**는 CloudFront가 콘텐츠에 대한 접근을 시간, IP, 경로 등 조건에 따라 제한할 수 있게 해줍니다.
+- 예를 들어, 사용자가 로그인 후 일정 시간 동안만 접근 가능한 사진/동영상 URL을 발급하거나, 특정 쿠키가 있을 때만 리소스에 접근하도록 할 수 있습니다.
+- CloudFront가 CDN 계층에서 접근을 제어하므로, 오리진(S3/EC2 등)까지 불필요한 요청이 도달하지 않아 **데이터 전송 비용**이 절감됩니다.
+- 수천~수백만 개 객체에 대해 일괄적으로 정책을 적용할 수 있어 **확장성**이 뛰어납니다.
+
+#### 2. CloudFront Functions로 Referrer 헤더 검증
+- CloudFront Functions를 활용하면, 요청의 `Referer`(리퍼러) 헤더를 검사해 **승인된 도메인**에서만 접근을 허용할 수 있습니다.
+- 예시: 아래와 같이 CloudFront Function에서 리퍼러를 체크하여, 승인된 도메인에서만 콘텐츠를 제공하고, 그 외에는 403 Forbidden을 반환할 수 있습니다.
+```javascript
+function handler(event) {
+    var request = event.request;
+    var headers = request.headers;
+    var allowedReferrers = ['https://trusted.com', 'https://myapp.com'];
+    if (headers['referer'] && allowedReferrers.some(domain => headers['referer'].value.startsWith(domain))) {
+        return request;
+    }
+    return {
+        statusCode: 403,
+        statusDescription: 'Forbidden',
+        body: 'Access Denied'
+    };
+}
+```
+- 이 방식은 **외부 사이트의 무단 링크(핫링킹)**를 방지하고, 승인된 채널을 통한 접근만 허용하여 스타트업의 콘텐츠를 보호합니다.
+
+#### 3. 비용 절감 및 확장성
+- CloudFront에서 접근 제어가 이루어지므로, 오리진(S3/EC2)으로의 불필요한 트래픽이 차단되어 **데이터 전송 비용**이 크게 줄어듭니다.
+- 서명된 URL/쿠키는 대량의 객체에 대해 일관된 정책 적용이 가능해, **운영 효율성**과 **확장성**이 매우 높습니다.
+
+#### 4. CORS, 미리 서명된 URL, 네트워크 ACL 방식의 한계
+- **CORS(교차 출처 리소스 공유)**: 모든 출처에 대해 허용하면 보안이 취약해지며, 신뢰할 수 있는 도메인만 허용하도록 세밀하게 설정해야 합니다.
+- **미리 서명된 URL**: S3에서 직접 발급하는 방식은 대량 객체에 대해 비효율적이며, 만료 관리/운영 자동화가 어렵습니다.
+- **네트워크 ACL**: IP 기반 차단은 IP 변경, 프록시 우회 등으로 쉽게 무력화될 수 있어 실질적 보안 효과가 낮습니다.
+
+#### 5. 스타트업 관점의 실전적 장점
+- **보안**: CDN 계층에서 접근 제어 및 리퍼러 검증으로 무단 사용 방지
+- **비용**: 오리진 트래픽 감소로 데이터 전송 비용 절감
+- **운영**: 대규모 객체에 대한 일관된 정책 적용 및 자동화 가능
+- **확장성**: 사용자/트래픽 증가에도 안정적으로 대응 가능
+
+#### 6. 참고: AWS 공식 문서
+- [Serving Private Content with Signed URLs and Signed Cookies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-signed-urls.html)
+- [CloudFront Functions로 리퍼러 검증 구현 예시](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/example-function-add-referer-header.html)
+
+---
+
 
 
 

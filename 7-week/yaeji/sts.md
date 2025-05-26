@@ -300,3 +300,68 @@ AWS 클라우드에서 Active Directory 기능을 사용하거나 온프레미�
 *   **온프레미스 요소가 없는 독립형 AD 호환 디렉터리**: Simple AD
 
 (참고: Amazon Cognito 사용자 풀은 사용자 인증 및 권한 부여를 위한 서비스이지만, 전통적인 디렉터리 서비스와는 다른 범주로 분류됩니다.)
+
+## 문제 - 온프레미스 LDAP과 AWS IAM 통합: SAML 미지원 환경에서의 최적 솔루션
+
+### 문제 배경
+
+- 온프레미스 데이터센터에서 LDAP(예: OpenLDAP, Microsoft AD 등) 기반의 인증 시스템을 사용 중이나, 이 LDAP이 SAML 2.0을 지원하지 않는 상황.
+- AWS 리소스 접근을 위해 IAM과 연동이 필요함.
+
+### 각 옵션별 설명 및 정답 근거
+
+#### 1. **AWS와 LDAP 간의 액세스를 관리하기 위해 AWS IAM Identity Center 서비스를 구현**
+- **오답**: AWS IAM Identity Center(구 AWS SSO)는 SAML, OIDC 등 표준 프로토콜을 지원하는 IdP와 연동할 수 있지만, SAML 미지원 LDAP과는 직접 연동 불가.
+- **LDAP 연동**은 AD Connector 또는 AWS Managed Microsoft AD를 통해서만 가능하며, 이 역시 SAML 또는 Kerberos 기반 인증이 필요.
+- **즉, SAML 미지원 LDAP은 직접 연동 불가**.
+
+#### 2. **LDAP 자격 증명이 업데이트될 때마다 IAM 자격 증명을 순환하기 위해 IAM 역할을 생성**
+- **오답**: IAM 자격 증명(Access Key, Secret Key)을 수동으로 관리/순환하는 것은 보안상 위험하며, 자동화/통합 인증 목적에 부합하지 않음.
+- **LDAP과 IAM의 직접적 연동이 불가**하므로, 이 방식은 권장되지 않음.
+
+#### 3. **온프레미스 데이터 센터에서 사용자 지정 ID 브로커 애플리케이션을 만들고 STS를 사용하여 단기 AWS 자격 증명을 발급**
+- **정답**: SAML 미지원 LDAP 환경에서 AWS와 연동하려면, **사용자 지정 ID 브로커**(Custom Identity Broker) 애플리케이션을 구축해야 함.
+- 이 브로커는 LDAP(또는 AD 등)에서 사용자를 인증한 뒤, AWS STS의 `AssumeRole` 또는 `GetFederationToken` API를 호출하여 **임시 보안 자격 증명**(Access Key, Secret Key, Session Token)을 발급받음.
+- 브로커는 이 임시 자격 증명을 사내 애플리케이션 또는 사용자가 사용할 수 있도록 전달.
+- **실무 예시**: AWS 공식 문서에서도 SAML 미지원 LDAP 환경에서는 Custom Broker + STS 조합을 권장함.
+- **장점**: LDAP 사용자 인증과 AWS 리소스 접근을 안전하게 분리, 임시 자격 증명으로 보안성 강화, 자격 증명 자동 만료.
+
+#### 4. **LDAP 식별자와 AWS 자격 증명을 참조하는 IAM 정책을 설정**
+- **오답**: IAM 정책만으로 LDAP 사용자와 AWS 자격 증명을 직접 연결할 수 없음.
+- 정책은 AWS 내의 주체(사용자, 역할, 그룹)에만 적용되며, 외부 LDAP 사용자와 직접 매핑 불가.
+
+---
+
+### 추가 설명: STS, AssumeRole, GetFederationToken, Custom Identity Broker
+
+#### **AWS STS(Security Token Service)**
+- 임시 보안 자격 증명을 발급하는 서비스.
+- `AssumeRole`, `GetFederationToken` 등 다양한 API 제공.
+- 임시 자격 증명은 만료 시간이 짧아 보안성이 높음.
+
+#### **Custom Identity Broker의 동작 원리**
+1. 사용자가 온프레미스 LDAP에 인증.
+2. 브로커 애플리케이션이 인증된 사용자를 대신해 AWS STS의 `AssumeRole` 또는 `GetFederationToken` 호출.
+3. STS가 임시 자격 증명(Access Key, Secret Key, Session Token) 반환.
+4. 브로커가 이 자격 증명을 사용자 또는 내부 애플리케이션에 전달.
+5. 사용자는 이 임시 자격 증명으로 AWS 리소스에 접근.
+
+#### **AssumeRole vs GetFederationToken**
+- **AssumeRole**: 주로 교차 계정, 역할 기반 접근 제어에 사용. 신뢰 정책(Trust Policy) 필요.
+- **GetFederationToken**: 외부 인증 시스템(예: LDAP)과 연동 시, 임시로 AWS 리소스 접근 권한 부여에 사용.
+
+#### **실무 적용 예시**
+- 사내 포털에서 LDAP 인증 → 브로커가 STS 호출 → 임시 자격 증명으로 S3, DynamoDB 등 접근.
+- 자격 증명 만료 시 자동 갱신, 보안성 강화.
+
+#### **관련 AWS 서비스와의 차이점**
+- **AWS Directory Service**: AD 기반 인증에 적합, LDAP만 사용하는 경우 제한적.
+- **AD Connector**: 온프레미스 AD와 AWS 서비스 연동, LDAP만 사용하는 경우에는 직접적 연동 불가.
+- **IAM Identity Center**: SAML/OIDC 기반 IdP 필요, SAML 미지원 LDAP은 직접 연동 불가.
+
+---
+
+### 결론
+
+- **SAML 미지원 LDAP 환경에서 AWS IAM과 통합하려면, 온프레미스에 Custom Identity Broker를 구축하고, 이 브로커가 AWS STS를 통해 임시 자격 증명을 발급하는 방식이 가장 적합**.
+- 이 방식은 AWS 공식 아키텍처 및 실무 사례에서도 권장됨.

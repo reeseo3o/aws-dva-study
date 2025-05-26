@@ -252,529 +252,106 @@ SSE-C는 고객이 직접 제공한 암호화 키를 사용하여 S3에서 서�
    - HMAC 값이 일치하면 객체를 복호화하여 반환
    - 키가 일치하지 않으면 403 Forbidden 오류 반환
 
-### 4.1.3. 보안 고려사항
-- **키 분실 위험**: 암호화 키를 잃어버리면 객체에 영구적으로 접근 불가능
-- **HMAC의 제한**: 
-  - HMAC 값은 단방향 해시이므로 원본 키를 역산할 수 없음
-  - HMAC 값만으로는 객체를 복호화할 수 없음
-  - HMAC은 단순히 제공된 키가 원본과 동일한지 확인하는 용도로만 사용
+---
 
-### 4.1.4. AWS SDK 사용 예제 (Python)
+#### [시험 대비] SSE-C 업로드 시 필수 헤더 및 오답 해설
+
+SSE-C(Server-Side Encryption with Customer-Provided Keys) 방식으로 S3에 객체를 업로드할 때 반드시 아래 3가지 헤더를 요청에 포함해야 합니다.
+
+- `x-amz-server-side-encryption-customer-algorithm`: 암호화 알고리즘 지정 (항상 "AES256")
+- `x-amz-server-side-encryption-customer-key`: base64로 인코딩된 256비트 암호화 키
+- `x-amz-server-side-encryption-customer-key-MD5`: 암호화 키의 base64 인코딩된 MD5 다이제스트 (무결성 검증용)
+
+이 세 가지 헤더가 모두 필수입니다. 하나라도 빠지면 업로드가 거부됩니다.
+
+**각 헤더의 역할**
+- `x-amz-server-side-encryption-customer-algorithm`: S3에 암호화 알고리즘을 명시적으로 전달 (SSE-C는 반드시 AES256)
+- `x-amz-server-side-encryption-customer-key`: 실제 암호화에 사용할 키 (base64 인코딩)
+- `x-amz-server-side-encryption-customer-key-MD5`: 키의 무결성 검증을 위한 MD5 다이제스트 (base64 인코딩)
+
+**시험에 자주 출제되는 오답 보기 해설**
+- `x-amz-server-side-encryption` 또는 `x-amz-server-side-encryption-aws-kms-key-id`는 SSE-KMS(즉, AWS KMS 키 사용)에서만 사용하며, SSE-C에는 적용되지 않음
+- `x-amz-server-side-encryption-customer-key`만 단독 사용은 불가 (알고리즘, MD5 모두 필수)
+- SSE-C는 반드시 위 3가지 헤더를 모두 포함해야 하며, 키 분실 시 복구 불가
+
+**실제 업로드 예시 (Python - boto3)**
 ```python
-import boto3
-from botocore.config import Config
-
-# HTTPS 강제 설정 (SSE-C는 HTTPS 필수)
-s3 = boto3.client('s3', config=Config(signature_version='s3v4'))
-
-# 업로드 예제
-encryption_key = b'your-32-byte-key'  # 32바이트 키 필요
 s3.put_object(
     Bucket='your-bucket',
     Key='encrypted-file.txt',
     Body=b'Your data here',
-    SSECustomerKey=encryption_key,
-    SSECustomerAlgorithm='AES256'
-)
-
-# 다운로드 예제
-try:
-    response = s3.get_object(
-        Bucket='your-bucket',
-        Key='encrypted-file.txt',
-        SSECustomerKey=encryption_key,
-        SSECustomerAlgorithm='AES256'
-    )
-    data = response['Body'].read()
-except s3.exceptions.ClientError as e:
-    if e.response['Error']['Code'] == '403':
-        print("잘못된 암호화 키 또는 키 누락")
-    raise
-```
-
-### 4.1.5. 모범 사례
-1. **키 관리**:
-   - 안전한 키 저장소 사용 (예: HSM, KMS)
-   - 키 백업 및 복구 절차 수립
-   - 키 순환 정책 수립
-
-2. **전송 보안**:
-   - 항상 HTTPS 사용 (SSE-C는 HTTP 요청 거부)
-   - 키 전송 시 추가 암호화 레이어 고려
-
-3. **모니터링**:
-   - 키 사용 로깅
-   - 접근 실패 모니터링
-   - CloudTrail을 통한 API 호출 감사
-
-## 5. CloudHSM (Hardware Security Module)
-
-CloudHSM은 전용 하드웨어 보안 모듈(HSM)을 제공하여 사용자가 암호화 키를 완벽하게 제어할 수 있도록 하는 서비스입니다.
-
-### 5.1. CloudHSM 특징
-- **전용 하드웨어**: FIPS 140-2 Level 3 규정을 준수하는 변조 방지 HSM 장치를 AWS 클라우드 내에 프로비저닝합니다.
-- **키 완전 제어**: 사용자가 암호화 키를 직접 생성, 관리, 사용합니다. AWS는 HSM 장치에 접근할 수 없습니다.
-- **지원 키 유형**: 대칭 및 비대칭 암호화 키 (SSL/TLS 키 등).
-- **비용**: 프리 티어 없음. HSM 장치 사용 시간에 따라 비용 발생.
-- **클라이언트 소프트웨어**: HSM 장치와 상호작용하기 위해 전용 클라이언트 소프트웨어 필요.
-- **고가용성**: CloudHSM 클러스터는 여러 AZ에 분산되어 고가용성을 제공합니다.
-- **IAM 권한**: HSM 클러스터 생성, 읽기, 업데이트, 삭제 등 높은 수준의 관리 작업에 사용. 키 관리 및 사용자 접근 권한은 CloudHSM 소프트웨어 내에서 별도로 관리.
-
-### 5.2. KMS와의 비교
-| 특징             | KMS                                  | CloudHSM                                  |
-| ---------------- | ------------------------------------ | ----------------------------------------- |
-| 테넌시           | 다중 테넌트 (Multi-tenant)             | 단일 테넌트 (Single-tenant, 전용 하드웨어) |
-| 키 관리 주체     | AWS (소프트웨어 기반) / 사용자 (CMK) | 사용자 (하드웨어 기반, AWS 접근 불가)      |
-| 마스터 키 종류   | AWS 소유, AWS 관리, 고객 관리형 CMK  | 고객 관리형 CMK만 지원                    |
-| 키 접근성        | 여러 리전 (재암호화 필요)              | VPC 내 배포 (VPC 피어링으로 공유 가능)      |
-| 암호화 가속      | 설정 불가                            | SSL/TLS 가속, Oracle TDE 가속 등 가능     |
-| 접근 및 인증     | IAM                                  | 자체 보안 메커니즘 (HSM 사용자/권한 관리)   |
-| 고가용성         | 관리형 서비스, 항상 사용 가능          | 다중 AZ에 걸친 HSM 장치 클러스터           |
-| 비용             | 프리 티어 포함, 저렴                  | 프리 티어 없음, 상대적으로 고가             |
-
-### 5.3. CloudHSM과 KMS 통합 (사용자 지정 키 스토어)
-- **목적**: EBS, S3, RDS 등 AWS 서비스에서 CloudHSM의 키를 KMS 인터페이스를 통해 사용하기 위함입니다.
-- **작동 방식**:
-    1.  CloudHSM 클러스터를 생성합니다.
-    2.  KMS에서 "사용자 지정 키 스토어(Custom Key Store)"를 생성하고, 이를 기존 CloudHSM 클러스터에 연결합니다.
-    3.  AWS 서비스(예: EBS)에서 암호화 시, 이 사용자 지정 키 스토어에 연결된 KMS 키(CMK)를 선택합니다.
-    4.  실제 암호화 작업은 CloudHSM 클러스터 내의 키를 활용하여 수행되지만, 모든 API 호출은 KMS를 통해 이루어지므로 CloudTrail에 기록됩니다.
-- **이점**:
-    -   CloudHSM의 강력한 보안 및 키 제어 기능을 활용.
-    -   KMS의 편리한 서비스 통합 및 감사 기능(CloudTrail)을 동시에 사용.
-
-## 6. SSM Parameter Store (Systems Manager Parameter Store)
-
-구성 데이터 및 암호(비밀)를 안전하게 저장하고 관리하기 위한 서비스입니다.
-
-### 6.1. Parameter Store 특징
-- **안전한 저장**: KMS를 사용하여 파라미터 값을 암호화할 수 있습니다 (SecureString 유형).
-- **계층 구조**: 경로 기반으로 파라미터를 구성하여 체계적인 관리가 가능합니다 (예: `/my-app/dev/db-url`). IAM 정책을 통해 경로별 접근 제어가 용이합니다.
-- **버전 관리**: 파라미터 업데이트 시마다 버전이 생성되어 변경 이력 추적이 가능합니다.
-- **IAM 통합**: IAM을 통해 파라미터에 대한 접근 권한을 제어합니다.
-- **EventBridge 통합**: 파라미터 변경 또는 만료 시 알림을 받거나 자동화 작업을 트리거할 수 있습니다 (고급 티어).
-- **CloudFormation 통합**: CloudFormation 템플릿에서 파라미터 값을 동적으로 참조할 수 있습니다.
-- **무료 (표준 티어)**: 표준 파라미터는 무료로 사용할 수 있습니다 (고급 파라미터는 유료).
-
-### 6.2. 파라미터 유형
-- **`String`**: 일반 텍스트 문자열.
-- **`StringList`**: 쉼표로 구분된 문자열 목록.
-- **`SecureString`**: KMS를 사용하여 암호화되는 문자열. 암호, API 키 등 민감 정보 저장에 사용.
-
-### 6.3. 파라미터 티어
-- **표준 (Standard) 티어**:
-    -   파라미터 크기: 최대 4KB.
-    -   파라미터 정책: 사용 불가.
-    -   비용: 무료.
-    -   계정당 파라미터 수: 10,000개.
-- **고급 (Advanced) 티어**:
-    -   파라미터 크기: 최대 8KB.
-    -   파라미터 정책: 사용 가능 (만료 알림, 변경 없음 알림 등).
-    -   비용: 파라미터당 월 $0.05 (API 사용량 별도).
-    -   계정당 파라미터 수: 100,000개.
-
-### 6.4. 파라미터 정책 (고급 티어 전용)
-- 파라미터의 만료 날짜 설정, 특정 기간 변경 없을 시 알림 등의 규칙을 적용할 수 있습니다.
-- 예:
-    -   **만료 정책**: 지정된 시간이 되면 파라미터 삭제 (또는 삭제 전 알림).
-    -   **변경 없음 알림 정책**: 일정 기간 동안 파라미터가 갱신되지 않으면 알림.
-
-### 6.5. CLI 및 SDK 사용 예 (Python - Boto3)
-- **파라미터 가져오기**:
-    ```python
-    import boto3
-    ssm = boto3.client('ssm', region_name='your-region')
-
-    # 단일 파라미터 (SecureString의 경우 복호화 필요)
-    response = ssm.get_parameter(Name='/my-app/dev/db-password', WithDecryption=True)
-    password = response['Parameter']['Value']
-
-    # 경로별 파라미터 가져오기
-    response = ssm.get_parameters_by_path(Path='/my-app/dev/', Recursive=True, WithDecryption=True)
-    for param in response['Parameters']:
-        print(f"{param['Name']}: {param['Value']}")
-    ```
-- **Lambda와 연동**: 환경 변수(예: `DEV_OR_PROD`)를 사용하여 동적으로 파라미터 경로를 구성하고, Lambda 실행 역할에 SSM 접근 권한 및 (SecureString의 경우) KMS 복호화 권한을 부여합니다.
-
-### 6.6. NoChangeNotification 정책과 EventBridge 통합
-
-NoChangeNotification 정책은 매개변수가 일정 기간 동안 변경되지 않았을 때 알림을 발생시키는 고급 티어 전용 기능입니다.
-
-#### 6.6.1. 구현 단계
-1. **고급 티어로 업그레이드**:
-    - 표준 티어에서는 정책 설정이 불가능합니다.
-    - 고급 티어로 업그레이드해야 NoChangeNotification 정책을 사용할 수 있습니다.
-    - AWS CLI 명령어:
-    ```bash
-    aws ssm update-parameter --name "/my-app/prod/db-url" --tier Advanced
-    ```
-
-2. **NoChangeNotification 정책 추가**:
-    - 매개변수의 LastModifiedTime을 기준으로 동작합니다.
-    - 지정된 기간(예: 90일) 동안 변경이 없으면 EventBridge 이벤트가 발생합니다.
-    - AWS CLI 명령어:
-    ```bash
-    aws ssm put-parameter --name "/my-app/prod/db-url" --value "your-value" --type String --policies '[{"Type": "NoChangeNotification","Attributes": {"After": "90"}}]'
-    ```
-
-3. **EventBridge 규칙 설정**:
-    ```json
-    {
-      "source": ["aws.ssm"],
-      "detail-type": ["Parameter Store Policy Action"],
-      "detail": {
-        "operation": ["NoChangeNotification"],
-        "name": ["/my-app/prod/db-url"]
-      }
-    }
-    ```
-
-4. **SNS 주제 생성 및 구독**:
-    - EventBridge 규칙의 대상으로 SNS 주제를 지정합니다.
-    - SNS 주제에 이메일, SMS 등의 구독을 추가하여 알림을 받습니다.
-
-#### 6.6.2. 주의사항
-- **티어 제한**: NoChangeNotification 정책은 고급 티어에서만 사용 가능합니다.
-- **비용**: 고급 티어는 매개변수당 월 $0.05의 비용이 발생합니다.
-- **정책 조합**: 여러 정책(예: ExpirationNotification + NoChangeNotification)을 동시에 적용할 수 있습니다.
-- **EventBridge 규칙**: 정책이 없으면 이벤트가 발생하지 않으므로, EventBridge 규칙만 설정하는 것은 의미가 없습니다.
-
-#### 6.6.3. 사용 예시 (Python - Boto3)
-```python
-import boto3
-
-ssm = boto3.client('ssm')
-
-# 매개변수를 고급 티어로 업그레이드하고 NoChangeNotification 정책 설정
-response = ssm.put_parameter(
-    Name='/my-app/prod/db-url',
-    Value='your-value',
-    Type='String',
-    Tier='Advanced',
-    Policies='[{"Type": "NoChangeNotification","Attributes": {"After": "90"}}]',
-    Overwrite=True
-)
-
-# 정책 확인
-response = ssm.get_parameter(
-    Name='/my-app/prod/db-url'
-)
-print(f"Parameter Version: {response['Parameter']['Version']}")
-```
-
-### 6.7. Parameter Store와 AWS 서비스 통합
-
-#### 6.7.1. CloudFormation 통합
-CloudFormation 템플릿에서 Parameter Store의 값을 직접 참조할 수 있습니다:
-
-```yaml
-Parameters:
-  DBPassword:
-    Type: 'AWS::SSM::Parameter::Value<String>'
-    Default: '/prod/app/db/password'
-    NoEcho: true
-
-Resources:
-  MyDBInstance:
-    Type: 'AWS::RDS::DBInstance'
-    Properties:
-      MasterUserPassword: !Ref DBPassword
-```
-
-#### 6.7.2. Lambda 통합
-Lambda 함수에서 Parameter Store 값을 안전하게 가져올 수 있습니다:
-
-```python
-import boto3
-import json
-
-def lambda_handler(event, context):
-    ssm = boto3.client('ssm')
-    
-    # 파라미터 스토어에서 데이터베이스 설정 가져오기
-    db_config = ssm.get_parameters_by_path(
-        Path='/prod/app/db',
-        WithDecryption=True
-    )
-    
-    # 파라미터 값을 딕셔너리로 변환
-    config = {param['Name'].split('/')[-1]: param['Value'] 
-             for param in db_config['Parameters']}
-    
-    return {
-        'statusCode': 200,
-        'body': json.dumps('Database configuration loaded')
-    }
-```
-
-### 6.8. Parameter Store 버전 관리
-
-Parameter Store는 각 파라미터의 변경 이력을 버전으로 관리합니다.
-
-```python
-import boto3
-
-ssm = boto3.client('ssm')
-
-# 파라미터 업데이트 (새 버전 생성)
-response = ssm.put_parameter(
-    Name='/prod/app/db/password',
-    Value='new-password',
-    Type='SecureString',
-    Overwrite=True
-)
-
-# 특정 버전의 파라미터 조회
-response = ssm.get_parameter(
-    Name='/prod/app/db/password',
-    WithDecryption=True,
-    Version=2
+    SSECustomerKey=encryption_key,  # x-amz-server-side-encryption-customer-key
+    SSECustomerAlgorithm='AES256',  # x-amz-server-side-encryption-customer-algorithm
+    SSECustomerKeyMD5=md5_digest    # x-amz-server-side-encryption-customer-key-MD5
 )
 ```
-
-### 6.9. Parameter Store 보안 모범 사례
-
-#### 6.9.1. 암호화 키 관리
-- SecureString 파라미터에는 고객 관리형 KMS 키 사용을 권장합니다.
-- 키 교체를 주기적으로 설정하여 보안을 강화합니다.
-
-#### 6.9.2. 액세스 제어
-- 최소 권한 원칙을 적용하여 필요한 권한만 부여합니다.
-- 경로 기반 IAM 정책을 사용하여 세분화된 접근 제어를 구현합니다.
-- 태그 기반 접근 제어를 활용하여 리소스 관리를 체계화합니다.
-
-예시 IAM 정책:
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ssm:GetParameter",
-                "ssm:GetParameters",
-                "ssm:GetParametersByPath"
-            ],
-            "Resource": "arn:aws:ssm:region:account-id:parameter/prod/app/db/*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "kms:Decrypt"
-            ],
-            "Resource": "arn:aws:kms:region:account-id:key/key-id"
-        }
-    ]
-}
-```
-
-#### 6.9.3. 모니터링 및 감사
-- CloudTrail 로깅을 활성화하여 모든 API 호출을 추적합니다.
-- CloudWatch 알림을 설정하여 중요한 변경사항을 모니터링합니다.
-- 정기적으로 접근 권한을 검토하고 불필요한 권한을 제거합니다.
-
-#### 6.9.4. 운영 모범 사례
-1. **명명 규칙 표준화**
-   - 일관된 경로 구조 사용 (예: /환경/애플리케이션/구성요소/파라미터)
-   - 의미있는 파라미터 이름 사용
-
-2. **환경별 경로 구조화**
-   ```
-   /prod/app/db/url
-   /prod/app/db/username
-   /prod/app/db/password
-   /dev/app/db/url
-   /dev/app/db/username
-   /dev/app/db/password
-   ```
-
-3. **정기적인 파라미터 검토**
-   - 사용하지 않는 파라미터 정리
-   - 값의 정확성 검증
-   - 만료된 비밀 정보 업데이트
-
-### 6.10. Parameter Store와 EventBridge 통합
-
-Parameter Store의 변경사항을 모니터링하고 자동화된 작업을 트리거할 수 있습니다.
-
-#### 6.10.1. 파라미터 변경 모니터링
-```json
-{
-  "source": ["aws.ssm"],
-  "detail-type": ["Parameter Store Change"],
-  "detail": {
-    "name": ["/prod/app/db/password"],
-    "operation": ["Update"]
-  }
-}
-```
-
-#### 6.10.2. 파라미터 만료 알림
-```json
-{
-  "source": ["aws.ssm"],
-  "detail-type": ["Parameter Store Policy Action"],
-  "detail": {
-    "operation": ["ExpirationNotification"],
-    "name": ["/prod/app/db/password"]
-  }
-}
-```
-
-### 6.11. 고급 파라미터 정책 예제
-
-여러 정책을 동시에 적용하여 복잡한 관리 요구사항을 충족할 수 있습니다.
-
-```python
-import boto3
-import json
-
-ssm = boto3.client('ssm')
-
-# 만료 및 변경 없음 알림 정책 동시 적용
-policies = [
-    {
-        "Type": "Expiration",
-        "Version": "1.0",
-        "Attributes": {
-            "Timestamp": "2024-12-31T23:59:59.000Z"
-        }
-    },
-    {
-        "Type": "NoChangeNotification",
-        "Version": "1.0",
-        "Attributes": {
-            "After": "90"
-        }
-    }
-]
-
-response = ssm.put_parameter(
-    Name='/prod/app/db/password',
-    Value='my-secure-password',
-    Type='SecureString',
-    Policies=json.dumps(policies),
-    Tier='Advanced',
-    Overwrite=True
-)
-```
-
-## 7. AWS Secrets Manager
-
-암호, API 키, 데이터베이스 자격 증명 등 비밀 정보를 안전하게 저장, 관리, 순환하기 위한 서비스입니다. SSM Parameter Store보다 비밀 관리에 특화된 기능을 제공합니다.
-
-### 7.1. Secrets Manager 특징
-- **자동 암호 순환**: Lambda 함수를 사용하여 정의된 일정(예: 매 30일)에 따라 비밀을 자동으로 순환할 수 있습니다.
-    -   RDS (MySQL, PostgreSQL, Aurora 등), Redshift, DocumentDB 등과 강력하게 통합되어, AWS가 제공하는 Lambda 함수를 통해 해당 서비스의 자격 증명을 자동으로 순환합니다.
-    -   기타 비밀(예: API 키)의 경우 사용자가 직접 순환 로직을 담은 Lambda 함수를 작성해야 합니다.
-- **KMS 암호화**: 저장되는 모든 비밀은 KMS를 사용하여 암호화됩니다 (필수).
-- **IAM 통합**: IAM을 통해 비밀에 대한 접근 권한을 제어합니다.
-- **CloudFormation 통합**: CloudFormation 템플릿에서 비밀 값을 동적으로 참조할 수 있습니다.
-- **멀티리전 비밀**: 비밀을 여러 AWS 리전에 복제하여 고가용성 및 재해 복구 전략을 지원합니다. 기본 리전에 문제가 생기면 복제본 비밀을 독립된 비밀로 승격시킬 수 있습니다.
-- **비용**: 암호당 월 $0.40, API 호출 10,000회당 $0.05 (30일 무료 평가판 제공).
-
-### 7.2. SSM Parameter Store와의 차이점
-
-| 특징             | Secrets Manager                                     | SSM Parameter Store                                       |
-| ---------------- | --------------------------------------------------- | --------------------------------------------------------- |
-| 주요 용도        | 비밀(암호, API 키, DB 자격증명) 관리 및 자동 순환    | 구성 데이터 및 비밀 저장 (수동 순환 또는 외부 자동화 필요) |
-| 자동 순환        | 내장 기능 (Lambda 연동)                             | 내장 기능 없음 (CloudWatch Events + Lambda로 직접 구현)     |
-| 비용             | 상대적으로 높음 (암호당 과금)                         | 저렴 (표준 티어 무료, 고급 티어 유료)                      |
-| KMS 암호화       | 필수                                                | 선택 사항 (`SecureString` 유형에만 적용)                  |
-| 서비스 통합      | RDS, DocumentDB 등 DB 자격 증명 순환에 특화된 통합 | 범용적                                                    |
-| 멀티리전         | 멀티리전 비밀 기능 제공                             | 직접 구성 필요                                            |
-
-### 7.3. 사용 예
-- **비밀 저장**:
-    -   RDS 데이터베이스 자격 증명, 다른 데이터베이스 자격 증명, 기타 유형의 비밀(키/값 쌍 또는 평문 JSON) 저장 가능.
-    -   저장 시 사용할 KMS 키 선택.
-- **자동 순환 설정**:
-    -   순환 주기(예: 60일) 및 순환을 수행할 Lambda 함수 지정.
-- **비밀 조회 (Python - Boto3)**:
-    ```python
-    import boto3
-    client = boto3.client('secretsmanager', region_name='your-region')
-    response = client.get_secret_value(SecretId='/prod/my-secret-api')
-    # 비밀 값은 'SecretString' (텍스트) 또는 'SecretBinary' (바이너리)에 있음
-    if 'SecretString' in response:
-        secret = response['SecretString']
-    else:
-        secret = base64.b64decode(response['SecretBinary'])
-    # secret은 JSON 문자열일 수 있으므로 파싱 필요
-    # import json; secret_data = json.loads(secret)
-    ```
-
-## 8. CloudFormation Dynamic References
-
-CloudFormation 템플릿 실행 시점에 SSM Parameter Store 또는 Secrets Manager에서 실제 값을 동적으로 가져와서 리소스 설정에 사용하는 기능입니다. 템플릿에 민감 정보를 직접 하드코딩하는 것을 방지합니다.
-
-- **지원 방식**:
-    -   `resolve:ssm:<parameter-name>:<version>`: SSM Parameter Store의 평문(`String`, `StringList`) 파라미터 값을 가져옵니다. 버전은 선택 사항.
-    -   `resolve:ssm-secure:<parameter-name>:<version>`: SSM Parameter Store의 암호화된(`SecureString`) 파라미터 값을 가져옵니다. 버전은 선택 사항.
-    -   `resolve:secretsmanager:<secret-id>:<secret-key>:<version-stage>:<version-id>`: Secrets Manager의 비밀 값을 가져옵니다.
-        -   `<secret-id>`: 비밀의 이름 또는 ARN.
-        -   `<secret-key>`: (선택 사항) JSON 구조의 비밀에서 특정 키의 값만 가져올 때 사용.
-        -   `<version-stage>`: (선택 사항) 특정 버전 스테이지(예: `AWSCURRENT`).
-        -   `<version-id>`: (선택 사항) 특정 버전 ID.
-- **예시 (Secrets Manager에서 RDS 마스터 사용자 암호 가져오기)**:
-    ```yaml
-    Resources:
-      MyRDSInstance:
-        Type: AWS::RDS::DBInstance
-        Properties:
-          MasterUsername: MyUser
-          MasterUserPassword: "{{resolve:secretsmanager:MyRDSPasswordSecret:SecretString:AWSCURRENT}}"
-          # ... 기타 속성 ...
-    ```
-- **RDS와 Secrets Manager 통합 (CloudFormation)**:
-    1.  **RDS가 비밀 관리**: `AWS::RDS::DBCluster` 또는 `AWS::RDS::DBInstance` 리소스에서 `ManageMasterUserPassword: true`로 설정하면, RDS가 Secrets Manager에 마스터 사용자 암호를 자동으로 생성하고 관리(자동 순환 포함)합니다. 생성된 비밀의 ARN은 `Fn::GetAtt`로 참조 가능.
-    2.  **CloudFormation이 비밀 생성, RDS가 참조**: CloudFormation 템플릿 내에서 `AWS::SecretsManager::Secret` 리소스를 사용하여 비밀을 직접 생성 (예: `GenerateSecretString` 사용). RDS 인스턴스는 이 비밀을 동적 참조로 사용. 비밀 순환은 `AWS::SecretsManager::RotationSchedule` 및 `AWS::SecretsManager::ResourcePolicy` 와 `AWS::RDS::DBInstance` (또는 `DBCluster`)의 `SecretRotation` 속성을 통해 설정 필요.
-
-## 9. CloudWatch Logs 암호화
-
-CloudWatch Logs 로그 그룹의 데이터를 KMS를 사용하여 암호화할 수 있습니다.
-
-- **암호화 단위**: 로그 그룹 레벨에서 수행 (로그 스트림 레벨 아님).
-- **설정 방법**:
-    -   CloudWatch 콘솔에서는 직접 CMK 연결 불가.
-    -   AWS CLI 또는 SDK를 통해 CloudWatch Logs API 사용.
-    -   **명령어**:
-        -   `aws logs associate-kms-key --log-group-name <log-group-name> --kms-key-id <kms-key-arn> --region <region>`: 기존 로그 그룹에 KMS 키 연결.
-        -   `aws logs create-log-group --log-group-name <new-log-group-name> --kms-key-id <kms-key-arn> --region <region>`: 새 로그 그룹 생성 시 KMS 키와 바로 연결.
-- **KMS 키 정책 필요**: CloudWatch Logs 서비스(`logs.<region>.amazonaws.com`)가 해당 KMS 키를 사용할 수 있도록 키 정책에 권한(예: `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey*` 등)을 명시적으로 추가해야 합니다.
-
-## 10. CodeBuild 보안
-
-### 10.1. VPC 내부 실행
-- CodeBuild는 기본적으로 VPC 외부에서 실행되지만, VPC 내부 리소스(예: RDS 데이터베이스, 내부 ELB)에 접근해야 하는 경우 VPC 내부에서 실행하도록 구성할 수 있습니다.
-- 설정: CodeBuild 프로젝트 -> 추가 구성 -> VPC, 서브넷, 보안 그룹 선택.
-
-### 10.2. 환경 변수 암호화 (민감 정보 관리)
-- CodeBuild 환경 변수에 암호 등 민감 정보를 평문으로 저장하는 것은 보안상 매우 위험합니다.
-- **권장 방법**:
-    1.  **SSM Parameter Store 참조**:
-        -   환경 변수 유형을 "Parameter"로 선택.
-        -   값으로 SSM Parameter Store에 저장된 파라미터의 이름(경로 포함, 예: `/CodeBuild/DBPassword`)을 지정.
-        -   CodeBuild 실행 역할에 해당 SSM 파라미터 접근 권한 및 (SecureString의 경우) KMS 복호화 권한 필요.
-    2.  **AWS Secrets Manager 참조**:
-        -   환경 변수 유형을 "Secrets Manager"로 선택.
-        -   값으로 Secrets Manager에 저장된 비밀의 이름 또는 ARN을 지정.
-        -   CodeBuild 실행 역할에 해당 Secrets Manager 비밀 접근 권한 및 KMS 복호화 권한 필요.
-- 런타임에 CodeBuild는 지정된 파라미터/비밀 값을 자동으로 가져와 컨테이너 환경 변수로 주입합니다.
-
-## 11. AWS Nitro Enclaves
-
-EC2 인스턴스 내에 격리된 컴퓨팅 환경(엔클레이브)을 생성하여 매우 민감한 데이터(PII, 건강 정보, 금융 정보 등)를 안전하게 처리할 수 있도록 하는 기술입니다.
-
-- **주요 특징**:
-    -   **완전 격리**: 엔클레이브는 호스트 EC2 인스턴스 및 다른 엔클레이브로부터 완전히 격리됩니다. 자체 커널, CPU, 메모리를 가집니다.
-    -   **제한된 접근**: 영구 스토리지 없음, 대화형 액세스(SSH 등) 불가, 외부 네트워킹 없음.
-    -   **보안 채널 통신**: 호스트 EC2 인스턴스와는 안전한 로컬 채널(vsock)을 통해서만 통신.
-    -   **암호화 증명 (Attestation)**: 엔클레이브에서 실행되는 코드가 인증되었음을 증명하여, 신뢰할 수 있는 코드만 민감 데이터에 접근하도록 보장. KMS와 통합하여 엔클레이브만 특정 데이터에 접근할 수 있도록 설정 가능.
-- **사용 사례**: 프라이빗 키 처리, 신용카드 결제 처리, 멀티파티 컴퓨팅 보호 등.
-- **작동 방식**:
-    1.  호환되는 Nitro 기반 EC2 인스턴스 실행 시 `EnclaveOptions`를 `true`로 설정.
-    2.  Nitro CLI를 사용하여 애플리케이션을 엔클레이브 이미지 파일(EIF)로 변환.
-    3.  Nitro CLI를 통해 EIF를 사용하여 EC2 인스턴스에 엔클레이브를 생성 및 실행.
 
 ---
+
+## 부록: S3 SSE-KMS 대용량 업로드 권한 문제
+
+### 문제 상황 요약
+- aws s3 cp로 100GB 이상 파일을 SSE-KMS가 활성화된 S3 버킷에 업로드 시 Access Denied 오류 발생
+- 작은 파일은 정상적으로 업로드됨
+
+### 원인 분석
+1. **Multipart Upload**
+   - AWS CLI는 8MB 이상 파일에 대해 자동으로 multipart upload를 사용
+   - multipart upload는 각 파트별로 암호화/키 관리가 개별적으로 수행됨
+   - 업로드 완료 시 S3가 각 파트를 조합하며 KMS에 복호화(kms:Decrypt) 권한이 필요
+2. **kms:Decrypt 권한 부족**
+   - 작은 파일(단일 put)은 kms:GenerateDataKey만 필요
+   - multipart upload는 완료 시 kms:Decrypt 권한까지 필요
+   - 해당 권한이 없으면 Access Denied 발생
+
+### 관련 시험 문제 예시
+
+#### 문제 1
+SSE-KMS가 활성화된 S3 버킷에 100GB 파일을 AWS CLI로 업로드할 때 Access Denied 오류가 발생했다. 작은 파일은 정상적으로 업로드된다. 가장 가능성 높은 원인은?
+
+A) KMS의 최대 암호화 크기 제한(4KB) 때문이다.
+B) IAM 정책에 100GB 이상 업로드 제한이 걸려 있다.
+C) multipart upload 완료 시 kms:Decrypt 권한이 없기 때문이다.
+D) kms:Encrypt 권한이 없기 때문이다.
+
+**정답:** C
+**해설:** multipart upload는 완료 시 S3가 각 파트를 검증하기 위해 kms:Decrypt 권한이 필요하다. 작은 파일은 단일 put이므로 kms:GenerateDataKey만 필요하다.
+
+#### 문제 2
+SSE-KMS가 적용된 S3 버킷에 대용량 파일을 업로드할 때 필요한 최소 KMS 권한 조합은?
+
+A) kms:GenerateDataKey
+B) kms:GenerateDataKey, kms:Decrypt
+C) kms:Encrypt, kms:Decrypt
+D) kms:Encrypt
+
+**정답:** B
+**해설:** multipart upload는 각 파트 암호화에 kms:GenerateDataKey, 완료 시 kms:Decrypt 권한이 필요하다.
+
+#### 문제 3
+다음 중 S3 SSE-KMS 버킷에 대용량 파일 업로드 시 Access Denied 오류의 잘못된 원인 설명은?
+
+A) KMS의 직접 암호화 크기 제한(4KB) 때문이다.
+B) kms:Decrypt 권한이 없기 때문이다.
+C) multipart upload가 사용되기 때문이다.
+D) IAM 정책으로 파일 크기 제한이 걸려 있기 때문이다.
+
+**정답:** A, D
+**해설:**
+A: S3는 자체적으로 대칭키로 암호화하므로 KMS의 4KB 제한과 무관하다.
+D: IAM 정책은 파일 크기 기준 제한을 지원하지 않는다.
+
+### 요점 정리
+- multipart upload: AWS CLI는 8MB 이상 파일에 대해 자동으로 multipart upload 사용
+- 각 파트별로 암호화/키 관리, 업로드 완료 시 kms:Decrypt 권한 필요
+- 작은 파일(단일 put): kms:GenerateDataKey만 필요
+- 대용량 파일(multipart): kms:GenerateDataKey + kms:Decrypt 필요
+- kms:Encrypt는 직접 암호화할 때만 필요, S3는 자체적으로 처리
+- KMS의 4KB 제한은 S3에 적용되지 않음
+- IAM 정책으로 파일 크기 제한 불가
+- kms:Encrypt 권한은 multipart upload와 직접적 관련 없음
+
+---
+
+
+
