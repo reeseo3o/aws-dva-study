@@ -2,7 +2,7 @@
 
 ## 📚 스터디 소개
 
-AWS Certified Developer Associate(DVA-02) 자격증 취득을 위한 스터디입니다.
+AWS Certified Developer Associate(DVA-C02) 자격증 취득을 위한 스터디입니다.
 
 ## ⏰ 스터디 기간
 
@@ -10,13 +10,13 @@ AWS Certified Developer Associate(DVA-02) 자격증 취득을 위한 스터디�
 
 ## 📖 스터디 방식
 
-- [udemy DVA-02 강의 기반](https://www.udemy.com/course/best-aws-certified-developer-associate/) 스터디 진행
+- [udemy DVA-C02 강의 기반](https://www.udemy.com/course/best-aws-certified-developer-associate/) 스터디 진행
 - 주차별 학습 내용 공유 및 토론 (매주 화,금)
 - 실습 과제 수행
 
 ## 🎯 학습 목표
 
-- AWS DVA-02 자격증 취득
+- AWS DVA-C02 자격증 취득
 - AWS 개발자 도구 및 서비스에 대한 실무 지식 습득
 - 클라우드 네이티브 애플리케이션 개발 역량 강화
 
